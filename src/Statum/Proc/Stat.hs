@@ -2,7 +2,10 @@
 {-# LANGUAGE RecordWildCards #-}
 
 module Statum.Proc.Stat
-    ( parse
+    ( Stat(..)
+    , CpuStat(..)
+    , parse
+    , cpuUtilization
     ) where
 
 import Data.Attoparsec.Text ((<?>))
@@ -15,17 +18,58 @@ import qualified Data.Text as T
 -- https://github.com/torvalds/linux/blob/master/Documentation/filesystems/proc.txt#L1323
 
 data Stat = Stat
-    { cpuTotal :: CpuStat
-    , cpuCores :: [CpuCoreStat]
-    , interupts :: [Integer]
-    , contextSwitches :: Integer
-    , bootTime :: Integer
-    , processes :: Integer
-    , processesRunning :: Integer
-    , processBlocked :: Integer
-    , softIrq :: [Integer]
+    { statCpuTotal :: CpuStat
+    , statCpuCores :: [CpuCoreStat]
+    , statInterupts :: [Int]
+    , statContextSwitches :: Int
+    , statBootTime :: Int
+    , statProcesses :: Int
+    , statProcessesRunning :: Int
+    , statProcessBlocked :: Int
+    , statSoftIrq :: [Int]
     }
     deriving (Show)
+
+
+data CpuCoreStat
+    = CpuCoreStat Int CpuStat
+    deriving (Show)
+
+
+data CpuStat = CpuStat
+    { cpuStatUser :: Int
+    , cpuStatNice :: Int
+    , cpuStatSystem :: Int
+    , cpuStatIdle :: Int
+    , cpuStatIowait :: Int
+    , cpuStatIrq :: Int
+    , cpuStatSoftIrq :: Int
+    , cpuStatSteal :: Int
+    , cpuStatGuest :: Int
+    , cpuStatGuestNice :: Int
+    }
+    deriving (Show)
+
+
+cpuUtilization :: CpuStat -> Double
+cpuUtilization CpuStat{..} =
+    [ cpuStatUser
+    , cpuStatNice
+    , cpuStatSystem
+    , cpuStatIdle
+    , cpuStatIowait
+    , cpuStatIrq
+    , cpuStatSoftIrq
+    , cpuStatSteal
+    , cpuStatGuest
+    , cpuStatGuestNice
+    ]
+    & sum
+    & fromIntegral
+    & (/) (fromIntegral cpuStatIdle)
+    & (-) 1
+    & (*) 100
+
 
 
 parse :: T.Text -> Either String Stat
@@ -35,57 +79,36 @@ parse input = do
 
 statParser :: Parser.Parser Stat
 statParser = do
-    cpuTotal <- cpuTotalParser
+    statCpuTotal <- cpuTotalParser
         <* endOfLineParser "after cpu"
-    cpuCores <- cpuCoreParser
+    statCpuCores <- cpuCoreParser
         <* endOfLineParser "after cpuN"
         & Parser.many'
-    interupts <- interuptParser
+    statInterupts <- interuptParser
         <* endOfLineParser "after intr"
-    contextSwitches <- contextSwitchParser
+    statContextSwitches <- contextSwitchParser
         <* endOfLineParser "after ctxt"
-    bootTime <- bootTimeParser
+    statBootTime <- bootTimeParser
         <* endOfLineParser "after btime"
-    processes <- processesParser
+    statProcesses <- processesParser
         <* endOfLineParser "after processes"
-    processesRunning <- processesRunningParser
+    statProcessesRunning <- processesRunningParser
         <* endOfLineParser "after procs_running"
-    processBlocked <- processesBlockedParser
+    statProcessBlocked <- processesBlockedParser
         <* endOfLineParser "after procs_blocked"
-    softIrq <- softIrqParser
+    statSoftIrq <- softIrqParser
         <* endOfLineParser "after softirq"
     pure $ Stat
-        { cpuTotal
-        , cpuCores
-        , interupts
-        , contextSwitches
-        , bootTime
-        , processes
-        , processesRunning
-        , processBlocked
-        , softIrq
+        { statCpuTotal
+        , statCpuCores
+        , statInterupts
+        , statContextSwitches
+        , statBootTime
+        , statProcesses
+        , statProcessesRunning
+        , statProcessBlocked
+        , statSoftIrq
         }
-
-
-data CpuCoreStat
-    = CpuCoreStat Int CpuStat
-    deriving (Show)
-
-
-
-data CpuStat = CpuStat
-    { cpuStatUser :: Integer
-    , cpuStatNice :: Integer
-    , cpuStatSystem :: Integer
-    , cpuStatIdle :: Integer
-    , cpuStatIowait :: Integer
-    , cpuStatIrq :: Integer
-    , cpuStatSoftIrq :: Integer
-    , cpuStatSteal :: Integer
-    , cpuStatGuest :: Integer
-    , cpuStatGuestNice :: Integer
-    }
-    deriving (Show)
 
 
 
@@ -129,49 +152,49 @@ cpuStatParser = do
         }
 
 
-interuptParser :: Parser.Parser [Integer]
+interuptParser :: Parser.Parser [Int]
 interuptParser = do
     textParser "intr"
     Parser.many1 decimalParser
 
 
-contextSwitchParser :: Parser.Parser Integer
+contextSwitchParser :: Parser.Parser Int
 contextSwitchParser = do
     textParser "ctxt"
     decimalParser
 
 
-bootTimeParser :: Parser.Parser Integer
+bootTimeParser :: Parser.Parser Int
 bootTimeParser = do
     textParser "btime"
     decimalParser
 
 
-processesParser :: Parser.Parser Integer
+processesParser :: Parser.Parser Int
 processesParser = do
     textParser "processes"
     decimalParser
 
 
-processesRunningParser :: Parser.Parser Integer
+processesRunningParser :: Parser.Parser Int
 processesRunningParser = do
     textParser "procs_running"
     decimalParser
 
 
-processesBlockedParser :: Parser.Parser Integer
+processesBlockedParser :: Parser.Parser Int
 processesBlockedParser = do
     textParser "procs_blocked"
     decimalParser
 
 
-softIrqParser :: Parser.Parser [Integer]
+softIrqParser :: Parser.Parser [Int]
 softIrqParser = do
     textParser "softirq"
     Parser.many1 decimalParser
 
 
-decimalParser :: Parser.Parser Integer
+decimalParser :: Parser.Parser Int
 decimalParser = do
     Parser.skipSpace
     Parser.decimal

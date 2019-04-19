@@ -11,8 +11,10 @@ import qualified Control.Concurrent.STM.TChan as TChan
 import qualified Control.Monad as Monad
 import qualified Data.Bifunctor as Bifunctor
 import qualified Data.Either.Combinators as Combinators
+import qualified Data.Text as T
 import qualified Data.Text.IO as TextIO
 import qualified Data.Time.Clock as Clock
+import qualified Safe
 import qualified Statum.Proc.Net.Dev as Dev
 import qualified Statum.Proc.Stat as Stat
 import qualified Statum.Reader as Reader
@@ -20,7 +22,7 @@ import qualified Statum.Reader as Reader
 
 
 
-data Error
+data InputError
     = ReadDevError Reader.Error
     | ParseDevError String
     | ReadStatError Reader.Error
@@ -35,7 +37,7 @@ data Msg
 
 
 
-devReaderConfig :: TChan.TChan (Either Error Msg) -> Reader.Config Msg Error [Dev.InterfaceSnapshot]
+devReaderConfig :: TChan.TChan (Either InputError Msg) -> Reader.Config Msg InputError [Dev.InterfaceSnapshot]
 devReaderConfig chan =
     Reader.Config
         { filepath = "dev.txt"
@@ -47,7 +49,7 @@ devReaderConfig chan =
         }
 
 
-statReaderConfig :: TChan.TChan (Either Error Msg) -> Reader.Config Msg Error Stat.Stat
+statReaderConfig :: TChan.TChan (Either InputError Msg) -> Reader.Config Msg InputError Stat.Stat
 statReaderConfig chan =
     Reader.Config
         { filepath = "stat.txt"
@@ -59,7 +61,7 @@ statReaderConfig chan =
         }
 
 
-parseDev :: Either Reader.Error Reader.Result -> Either Error [Dev.InterfaceSnapshot]
+parseDev :: Either Reader.Error Reader.Result -> Either InputError [Dev.InterfaceSnapshot]
 parseDev eitherResult = do
     Reader.Result{..} <- eitherResult
         & Bifunctor.first ReadDevError
@@ -70,7 +72,7 @@ parseDev eitherResult = do
         & pure
 
 
-parseStat :: Either Reader.Error Reader.Result -> Either Error Stat.Stat
+parseStat :: Either Reader.Error Reader.Result -> Either InputError Stat.Stat
 parseStat eitherResult = do
     Reader.Result{..} <- eitherResult
         & Bifunctor.first ReadStatError
@@ -91,46 +93,82 @@ main = do
     Monad.forever $ do
         msg <- TChan.readTChan chan
             & STM.atomically
-        case msg of
-            Left err ->
-                handleError err
+        let eitherMetrics = case msg of
+                Left err ->
+                    Left (Input err)
 
-            Right msg ->
-                handleMsg msg
-        pure ()
+                Right msg ->
+                    handleMsg msg
+        case eitherMetrics of
+            Left reason ->
+                pure ()
+
+            Right metrics ->
+                mapM_ print metrics
 
 
-handleError :: Error -> IO ()
+handleError :: InputError -> IO ()
 handleError err =
     print ("error", err)
 
 
--- TODO: make pure
-handleMsg :: Msg -> IO ()
+data Reason
+    = Input InputError
+    | MissingPrevious
+    | InterfaceNotFound T.Text
+    | InvalidRate T.Text
+    deriving (Show)
+
+
+data Metric
+    = CpuUtilization Double
+    | NetworkTxRate NetworkRateMetric
+    | NetworkRxRate NetworkRateMetric
+    deriving (Show)
+
+
+data NetworkRateMetric = NetworkRateMetric
+    { interfaceName :: T.Text
+    , bytesPerSecond :: Double
+    }
+    deriving (Show)
+
+
+handleMsg :: Msg -> Either Reason [Metric]
 handleMsg msg =
     case msg of
         DevMsg Reader.Msg{..} ->
-            handleDevMsg current previous
+            handleDevMsg "eno1" current previous
 
         StatMsg Reader.Msg{..} ->
             handleStatMsg current
 
 
--- TODO: make pure
-handleDevMsg :: [Dev.InterfaceSnapshot] -> [[Dev.InterfaceSnapshot]] -> IO ()
-handleDevMsg current previous =
-    --Dev.findSnapshot current "en0"
-    print current
+handleDevMsg :: T.Text -> [Dev.InterfaceSnapshot] -> [[Dev.InterfaceSnapshot]] -> Either Reason [Metric]
+handleDevMsg ifaceName current previous = do
+    currentSnapshot <- Dev.findSnapshot current ifaceName
+        & Combinators.maybeToRight (InterfaceNotFound ifaceName)
+    prevSnapshots <- Safe.headMay previous
+        & Combinators.maybeToRight MissingPrevious
+    prevSnapshot <- Dev.findSnapshot prevSnapshots ifaceName
+        & Combinators.maybeToRight (InterfaceNotFound ifaceName)
+    txRate <- Dev.txRate currentSnapshot prevSnapshot
+        & Combinators.maybeToRight (InvalidRate ifaceName)
+    rxRate <- Dev.rxRate currentSnapshot prevSnapshot
+        & Combinators.maybeToRight (InvalidRate ifaceName)
+    pure
+        [ txRate
+            & NetworkRateMetric ifaceName
+            & NetworkTxRate
+        , rxRate
+            & NetworkRateMetric ifaceName
+            & NetworkRxRate
+        ]
 
 
--- TODO: make pure
-handleStatMsg :: Stat.Stat -> IO ()
-handleStatMsg current =
-    --Dev.findSnapshot current "en0"
-    print current
-
-
-cpuPercent :: Either String Stat.Stat -> Either String Double
-cpuPercent eitherStat = do
-    Stat.Stat{..} <- eitherStat
-    pure $ Stat.cpuUtilization statCpuTotal
+handleStatMsg :: Stat.Stat -> Either Reason [Metric]
+handleStatMsg Stat.Stat{..} =
+    Stat.cpuUtilization statCpuTotal
+        & CpuUtilization
+        & pure
+        & pure

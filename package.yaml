@@ -28,6 +28,7 @@ dependencies:
 - stm
 - time
 - clock
+- safe
 - safe-exceptions
 
 default-extensions:

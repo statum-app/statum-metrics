@@ -6,7 +6,9 @@ module Statum.Proc.Net.Dev
     , InterfaceSnapshot(..)
     , parse
     , txRate
+    , rxRate
     , find
+    , findSnapshot
     ) where
 
 import Data.Attoparsec.Text ((<?>))
@@ -61,15 +63,24 @@ findSnapshot snapshots ifaceName =
         & List.find (\snap -> name (interface snap) == ifaceName)
 
 
+rxRate :: InterfaceSnapshot -> InterfaceSnapshot -> Maybe Double
+rxRate snapshotA snapshotB =
+    networkRate snapshotA snapshotB rxBytes
+
 
 txRate :: InterfaceSnapshot -> InterfaceSnapshot -> Maybe Double
 txRate snapshotA snapshotB =
-    let
-        txA =
-            txBytes (interface snapshotA)
+    networkRate snapshotA snapshotB txBytes
 
-        txB =
-            txBytes (interface snapshotB)
+
+networkRate :: InterfaceSnapshot -> InterfaceSnapshot -> (Interface -> Int) -> Maybe Double
+networkRate snapshotA snapshotB transferedBytes =
+    let
+        bytesA =
+            transferedBytes (interface snapshotA)
+
+        bytesB =
+            transferedBytes (interface snapshotB)
 
         timestampA =
             timestamp snapshotA
@@ -83,14 +94,14 @@ txRate snapshotA snapshotB =
                 & fromIntegral
 
         txDiffNano =
-            (txA - txB) * 1000000000
+            (bytesA - bytesB) * 1000000000
                 & fromIntegral
 
         bytesPerSecond =
            (txDiffNano / timestampDiffNano) / 1000000000
 
     in
-    if txA > txB && timestampA > timestampB then
+    if bytesA >= bytesB && timestampA >= timestampB then
         Just bytesPerSecond
 
     else

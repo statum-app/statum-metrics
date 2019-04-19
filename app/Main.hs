@@ -3,25 +3,97 @@
 
 module Main where
 
+import Data.Function ((&))
+
+import qualified Control.Concurrent as Concurrent
+import qualified Control.Concurrent.STM as STM
+import qualified Control.Concurrent.STM.TChan as TChan
 import qualified Control.Monad as Monad
+import qualified Data.Bifunctor as Bifunctor
+import qualified Data.Either.Combinators as Combinators
 import qualified Data.Text.IO as TextIO
+import qualified Data.Time.Clock as Clock
 import qualified Statum.Proc.Net.Dev as Dev
 import qualified Statum.Proc.Stat as Stat
+import qualified Statum.Reader as Reader
 
-import Data.Function
+
+
+
+data Error
+    = ReadDevError Reader.Error
+    | ParseDevError String
+    deriving (Show)
+
+
+data Msg
+    = DevMsg (Reader.Msg [Dev.InterfaceSnapshot])
+    deriving (Show)
+
+
+
+devReaderConfig :: TChan.TChan (Either Error Msg) -> Reader.Config Msg Error [Dev.InterfaceSnapshot]
+devReaderConfig chan =
+    Reader.Config
+        { filepath = "dev.txt"
+        , mapper = parseDev
+        , toMsg = DevMsg
+        , chan = chan
+        , interval = Reader.Second 5
+        , historyLength = 1
+        }
+
+
+
+parseDev :: Either Reader.Error Reader.Result -> Either Error [Dev.InterfaceSnapshot]
+parseDev eitherResult = do
+    Reader.Result{..} <- eitherResult
+        & Bifunctor.first ReadDevError
+    interfaces <- Dev.parse fileContents
+        & Bifunctor.first ParseDevError
+    interfaces
+        & map (Dev.InterfaceSnapshot timestamp)
+        & pure
+
 
 main :: IO ()
 main = do
-    --input <- TextIO.readFile "stat.txt"
-    --let eitherStat = Stat.parse input
-    --print $ cpuPercent eitherStat
+    chan <- TChan.newTChan
+        & STM.atomically
+    chan
+        & devReaderConfig
+        & Reader.forkReader
+    Monad.forever $ do
+        msg <- TChan.readTChan chan
+            & STM.atomically
+        case msg of
+            Left err ->
+                handleError err
 
-    input <- TextIO.readFile "dev.txt"
-    print $ Dev.parse input
-    pure ()
-    --
-    --print $ Stat.parse "cpu  231992 0 121126 275336733 4409 0 876 0 0 0"
-    --
+            Right msg ->
+                handleMsg msg
+        pure ()
+
+
+handleError :: Error -> IO ()
+handleError err =
+    print ("error", err)
+
+
+-- TODO: make pure
+handleMsg :: Msg -> IO ()
+handleMsg msg =
+    case msg of
+        DevMsg Reader.Msg{..} ->
+            handleDevMsg current previous
+
+
+-- TODO: make pure
+handleDevMsg :: [Dev.InterfaceSnapshot] -> [[Dev.InterfaceSnapshot]] -> IO ()
+handleDevMsg current previous =
+    --Dev.findSnapshot current "en0"
+    print current
+
 
 cpuPercent :: Either String Stat.Stat -> Either String Double
 cpuPercent eitherStat = do

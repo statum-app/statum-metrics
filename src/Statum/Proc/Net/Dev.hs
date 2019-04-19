@@ -3,14 +3,19 @@
 
 module Statum.Proc.Net.Dev
     ( Interface(..)
+    , InterfaceSnapshot(..)
     , parse
+    , txRate
+    , find
     ) where
 
 import Data.Attoparsec.Text ((<?>))
+import Data.Function ((&))
 
 import qualified Data.Attoparsec.Text as Parser
-import Data.Function ((&))
+import qualified Data.List as List
 import qualified Data.Text as T
+import qualified System.Clock as Clock
 
 
 
@@ -34,6 +39,62 @@ data Interface = Interface
     , txCompressed :: Int
     }
     deriving (Show)
+
+
+
+data InterfaceSnapshot = InterfaceSnapshot
+    { timestamp :: Clock.TimeSpec
+    , interface :: Interface
+    }
+    deriving (Show)
+
+
+find :: [Interface] -> T.Text -> Maybe Interface
+find ifaces ifaceName =
+    ifaces
+        & List.find (\iface -> name iface == ifaceName)
+
+
+findSnapshot :: [InterfaceSnapshot] -> T.Text -> Maybe InterfaceSnapshot
+findSnapshot snapshots ifaceName =
+    snapshots
+        & List.find (\snap -> name (interface snap) == ifaceName)
+
+
+
+txRate :: InterfaceSnapshot -> InterfaceSnapshot -> Maybe Double
+txRate snapshotA snapshotB =
+    let
+        txA =
+            txBytes (interface snapshotA)
+
+        txB =
+            txBytes (interface snapshotB)
+
+        timestampA =
+            timestamp snapshotA
+
+        timestampB =
+            timestamp snapshotB
+
+        timestampDiffNano =
+            Clock.diffTimeSpec timestampA timestampB
+                & Clock.toNanoSecs
+                & fromIntegral
+
+        txDiffNano =
+            (txA - txB) * 1000000000
+                & fromIntegral
+
+        bytesPerSecond =
+           (txDiffNano / timestampDiffNano) / 1000000000
+
+    in
+    if txA > txB && timestampA > timestampB then
+        Just bytesPerSecond
+
+    else
+        Nothing
 
 
 

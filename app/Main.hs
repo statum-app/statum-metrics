@@ -40,7 +40,7 @@ data Msg
 devReaderConfig :: TChan.TChan (Either InputError Msg) -> Reader.Config Msg InputError [Dev.InterfaceSnapshot]
 devReaderConfig chan =
     Reader.Config
-        { filepath = "dev.txt"
+        { filepath = "/proc/net/dev"
         , mapper = parseDev
         , toMsg = DevMsg
         , chan = chan
@@ -52,7 +52,7 @@ devReaderConfig chan =
 statReaderConfig :: TChan.TChan (Either InputError Msg) -> Reader.Config Msg InputError Stat.Stat
 statReaderConfig chan =
     Reader.Config
-        { filepath = "stat.txt"
+        { filepath = "/proc/stat"
         , mapper = parseStat
         , toMsg = StatMsg
         , chan = chan

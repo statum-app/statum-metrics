@@ -93,19 +93,14 @@ main = do
     chan <- TChan.dupTChan broadcastChan
         & STM.atomically
     Monad.forever $ do
-        msg <- TChan.readTChan chan
+        eitherMsg <- TChan.readTChan chan
             & STM.atomically
-        case Bifunctor.bimap Input handleMsg msg of
+        case handleEitherMsg eitherMsg of
             Left reason ->
                 handleError reason
 
             Right metrics ->
                 mapM_ print metrics
-
-
-handleError :: Reason -> IO ()
-handleError reason =
-    print ("reason", reason)
 
 
 data Reason
@@ -128,6 +123,18 @@ data NetworkRateMetric = NetworkRateMetric
     , bytesPerSecond :: Double
     }
     deriving (Show)
+
+
+handleEitherMsg :: Either InputError Msg -> Either Reason [Metric]
+handleEitherMsg eitherMsg = do
+    msg <- eitherMsg
+        & Bifunctor.first Input
+    handleMsg msg
+
+
+handleError :: Reason -> IO ()
+handleError reason =
+    print ("reason", reason)
 
 
 handleMsg :: Msg -> Either Reason [Metric]

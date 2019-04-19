@@ -23,11 +23,14 @@ import qualified Statum.Reader as Reader
 data Error
     = ReadDevError Reader.Error
     | ParseDevError String
+    | ReadStatError Reader.Error
+    | ParseStatError String
     deriving (Show)
 
 
 data Msg
     = DevMsg (Reader.Msg [Dev.InterfaceSnapshot])
+    | StatMsg (Reader.Msg Stat.Stat)
     deriving (Show)
 
 
@@ -44,6 +47,17 @@ devReaderConfig chan =
         }
 
 
+statReaderConfig :: TChan.TChan (Either Error Msg) -> Reader.Config Msg Error Stat.Stat
+statReaderConfig chan =
+    Reader.Config
+        { filepath = "stat.txt"
+        , mapper = parseStat
+        , toMsg = StatMsg
+        , chan = chan
+        , interval = Reader.Second 5
+        , historyLength = 0
+        }
+
 
 parseDev :: Either Reader.Error Reader.Result -> Either Error [Dev.InterfaceSnapshot]
 parseDev eitherResult = do
@@ -56,12 +70,23 @@ parseDev eitherResult = do
         & pure
 
 
+parseStat :: Either Reader.Error Reader.Result -> Either Error Stat.Stat
+parseStat eitherResult = do
+    Reader.Result{..} <- eitherResult
+        & Bifunctor.first ReadStatError
+    Stat.parse fileContents
+        & Bifunctor.first ParseStatError
+
+
 main :: IO ()
 main = do
     chan <- TChan.newTChan
         & STM.atomically
     chan
         & devReaderConfig
+        & Reader.forkReader
+    chan
+        & statReaderConfig
         & Reader.forkReader
     Monad.forever $ do
         msg <- TChan.readTChan chan
@@ -87,10 +112,20 @@ handleMsg msg =
         DevMsg Reader.Msg{..} ->
             handleDevMsg current previous
 
+        StatMsg Reader.Msg{..} ->
+            handleStatMsg current
+
 
 -- TODO: make pure
 handleDevMsg :: [Dev.InterfaceSnapshot] -> [[Dev.InterfaceSnapshot]] -> IO ()
 handleDevMsg current previous =
+    --Dev.findSnapshot current "en0"
+    print current
+
+
+-- TODO: make pure
+handleStatMsg :: Stat.Stat -> IO ()
+handleStatMsg current =
     --Dev.findSnapshot current "en0"
     print current
 

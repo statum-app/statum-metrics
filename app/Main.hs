@@ -82,34 +82,30 @@ parseStat eitherResult = do
 
 main :: IO ()
 main = do
-    chan <- TChan.newTChan
+    broadcastChan <- TChan.newBroadcastTChan
         & STM.atomically
-    chan
+    broadcastChan
         & devReaderConfig
         & Reader.forkReader
-    chan
+    broadcastChan
         & statReaderConfig
         & Reader.forkReader
+    chan <- TChan.dupTChan broadcastChan
+        & STM.atomically
     Monad.forever $ do
         msg <- TChan.readTChan chan
             & STM.atomically
-        let eitherMetrics = case msg of
-                Left err ->
-                    Left (Input err)
-
-                Right msg ->
-                    handleMsg msg
-        case eitherMetrics of
+        case Bifunctor.bimap Input handleMsg msg of
             Left reason ->
-                pure ()
+                handleError reason
 
             Right metrics ->
                 mapM_ print metrics
 
 
-handleError :: InputError -> IO ()
-handleError err =
-    print ("error", err)
+handleError :: Reason -> IO ()
+handleError reason =
+    print ("reason", reason)
 
 
 data Reason

@@ -19,6 +19,7 @@ import qualified Control.Concurrent.STM.TChan as TChan
 import qualified Control.Exception.Safe as Exception
 import qualified Control.Monad as Monad
 import qualified Data.Bifunctor as Bifunctor
+import qualified Data.Either as Either
 import qualified Data.Text as T
 import qualified Data.Text.IO as TextIO
 import qualified System.Clock as Clock
@@ -81,14 +82,10 @@ forkReader config =
 
 updateHistory :: Int -> [a] -> Either e a -> [a]
 updateHistory historyLength history current =
-    case current of
-        Left _ ->
-            history
-
-        Right result ->
-            result : history
-                & take historyLength
-
+    current
+        & fmap (: history)
+        & fmap (take historyLength)
+        & Either.fromRight history
 
 
 readLoop :: Config msg e a -> [a] -> IO ()

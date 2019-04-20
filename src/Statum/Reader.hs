@@ -93,15 +93,15 @@ readLoop config@Config{..} previous = do
     now <- Clock.getTime Clock.Monotonic
     eitherText <- TextIO.readFile filepath
         & Exception.try
-    let result = eitherText
+    let eitherResult = eitherText
             & Bifunctor.first ReadError
             & fmap (Result now)
             & mapper
-    result
+    eitherResult
         & fmap (Msg previous)
         & fmap toMsg
         & TChan.writeTChan chan
         & STM.atomically
     Concurrent.threadDelay (intervalToMicroseconds interval)
-    updateHistory historyLength previous result
+    updateHistory historyLength previous eitherResult
         & readLoop config

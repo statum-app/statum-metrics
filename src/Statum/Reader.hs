@@ -18,6 +18,7 @@ import qualified Control.Concurrent.STM as STM
 import qualified Control.Concurrent.STM.TChan as TChan
 import qualified Control.Exception.Safe as Exception
 import qualified Control.Monad as Monad
+import qualified Control.Monad.State.Strict as State
 import qualified Data.Bifunctor as Bifunctor
 import qualified Data.Either as Either
 import qualified Data.Text as T
@@ -74,34 +75,48 @@ data Config msg e a = Config
 
 forkReader :: Config msg e a -> IO ()
 forkReader config =
-    readLoop config []
+    State.evalStateT (readBroadcastLoop config) []
         & Concurrent.forkIO
         & Monad.void
 
 
+readBroadcastLoop :: Config msg e a -> State.StateT [a] IO ()
+readBroadcastLoop config@Config{..} =
+    Monad.forever $ do
+        previous <- State.get
+        result <- reader config previous
+            & State.lift
+        broadcast config result previous
+            & State.lift
+        updateHistory historyLength result
+            & State.modify'
+        Concurrent.threadDelay (intervalToMicroseconds interval)
+            & State.lift
 
-updateHistory :: Int -> [a] -> Either e a -> [a]
-updateHistory historyLength history current =
-    current
-        & fmap (: history)
-        & fmap (take historyLength)
-        & Either.fromRight history
 
-
-readLoop :: Config msg e a -> [a] -> IO ()
-readLoop config@Config{..} previous = do
+reader :: Config msg e a -> [a] -> IO (Either e a)
+reader Config{..} previous = do
     now <- Clock.getTime Clock.Monotonic
     eitherText <- TextIO.readFile filepath
         & Exception.try
-    let eitherResult = eitherText
-            & Bifunctor.first ReadError
-            & fmap (Result now)
-            & mapper
-    eitherResult
+    eitherText
+        & Bifunctor.first ReadError
+        & fmap (Result now)
+        & mapper
+        & pure
+
+
+broadcast :: Config msg e a -> Either e a -> [a] -> IO ()
+broadcast Config{..} result previous =
+    result
         & fmap (Msg previous)
         & fmap toMsg
         & TChan.writeTChan chan
         & STM.atomically
-    Concurrent.threadDelay (intervalToMicroseconds interval)
-    updateHistory historyLength previous eitherResult
-        & readLoop config
+
+updateHistory :: Int -> Either e a -> [a] -> [a]
+updateHistory historyLength current previous =
+    current
+        & fmap (: previous)
+        & fmap (take historyLength)
+        & Either.fromRight previous

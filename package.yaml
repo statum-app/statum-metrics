@@ -50,7 +50,7 @@ library:
   source-dirs: src
 
 executables:
-  statum-metrics-exe:
+  statum-metrics:
     main:                Main.hs
     source-dirs:         app
     ghc-options:

@@ -57,7 +57,7 @@ statReaderConfig chan =
         , toMsg = StatMsg
         , chan = chan
         , interval = Reader.Second 1
-        , historyLength = 0
+        , historyLength = 1
         }
 
 

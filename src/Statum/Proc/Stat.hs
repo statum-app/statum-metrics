@@ -96,7 +96,7 @@ cpuUtilisation snapshotA snapshotB =
         utilisation =
             100.0 * (1.0 - idleDelta / totalDelta)
     in
-    if timestampA >= timestampB then
+    if timestampA >= timestampB && totalDelta > 0 then
         Just utilisation
 
     else

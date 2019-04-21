@@ -32,7 +32,7 @@ data InputError
 
 data Msg
     = DevMsg (Reader.Msg [Dev.InterfaceSnapshot])
-    | StatMsg (Reader.Msg Stat.Stat)
+    | StatMsg (Reader.Msg Stat.StatSnapshot)
     deriving (Show)
 
 
@@ -49,7 +49,7 @@ devReaderConfig chan =
         }
 
 
-statReaderConfig :: TChan.TChan (Either InputError Msg) -> Reader.Config Msg InputError Stat.Stat
+statReaderConfig :: TChan.TChan (Either InputError Msg) -> Reader.Config Msg InputError Stat.StatSnapshot
 statReaderConfig chan =
     Reader.Config
         { filepath = "/proc/stat"
@@ -72,12 +72,13 @@ parseDev eitherResult = do
         & pure
 
 
-parseStat :: Either Reader.Error Reader.Result -> Either InputError Stat.Stat
+parseStat :: Either Reader.Error Reader.Result -> Either InputError Stat.StatSnapshot
 parseStat eitherResult = do
     Reader.Result{..} <- eitherResult
         & Bifunctor.first ReadStatError
     Stat.parse fileContents
         & Bifunctor.first ParseStatError
+        & fmap (Stat.StatSnapshot timestamp)
 
 
 main :: IO ()
@@ -108,6 +109,7 @@ data Reason
     | MissingPrevious
     | InterfaceNotFound T.Text
     | InvalidRate T.Text
+    | InvalidUtilisation
     deriving (Show)
 
 
@@ -144,7 +146,7 @@ handleMsg msg =
             handleDevMsg "eno1" current previous
 
         StatMsg Reader.Msg{..} ->
-            handleStatMsg current
+            handleStatMsg current previous
 
 
 handleDevMsg :: T.Text -> [Dev.InterfaceSnapshot] -> [[Dev.InterfaceSnapshot]] -> Either Reason [Metric]
@@ -169,9 +171,10 @@ handleDevMsg ifaceName current previous = do
         ]
 
 
-handleStatMsg :: Stat.Stat -> Either Reason [Metric]
-handleStatMsg Stat.Stat{..} =
-    Stat.cpuUtilization statCpuTotal
-        & CpuUtilization
-        & pure
-        & pure
+handleStatMsg :: Stat.StatSnapshot -> [Stat.StatSnapshot]-> Either Reason [Metric]
+handleStatMsg current previous = do
+    prev <- Safe.headMay previous
+        & Combinators.maybeToRight MissingPrevious
+    utilisation <- Stat.cpuUtilisation current prev
+        & Combinators.maybeToRight (InvalidUtilisation)
+    pure [CpuUtilization utilisation]

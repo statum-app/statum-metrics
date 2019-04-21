@@ -3,19 +3,26 @@
 
 module Statum.Proc.Stat
     ( Stat(..)
+    , StatSnapshot(..)
     , CpuStat(..)
     , parse
-    , cpuUtilization
+    , cpuUtilisation
     ) where
 
 import Data.Attoparsec.Text ((<?>))
+import Data.Function ((&))
 
 import qualified Data.Attoparsec.Text as Parser
-import Data.Function ((&))
 import qualified Data.Text as T
+import qualified System.Clock as Clock
 
 
--- https://github.com/torvalds/linux/blob/master/Documentation/filesystems/proc.txt#L1323
+data StatSnapshot = StatSnapshot
+    { timestamp :: Clock.TimeSpec
+    , stat :: Stat
+    }
+    deriving (Show)
+
 
 data Stat = Stat
     { statCpuTotal :: CpuStat
@@ -51,24 +58,66 @@ data CpuStat = CpuStat
     deriving (Show)
 
 
-cpuUtilization :: CpuStat -> Double
-cpuUtilization CpuStat{..} =
-    [ cpuStatUser
-    , cpuStatNice
-    , cpuStatSystem
-    , cpuStatIdle
-    , cpuStatIowait
-    , cpuStatIrq
-    , cpuStatSoftIrq
-    , cpuStatSteal
-    , cpuStatGuest
-    , cpuStatGuestNice
-    ]
-    & sum
-    & fromIntegral
-    & (/) (fromIntegral cpuStatIdle)
-    & (-) 1
-    & (*) 100
+cpuUtilisation :: StatSnapshot -> StatSnapshot -> Maybe Double
+cpuUtilisation snapshotA snapshotB =
+    let
+        timestampA =
+            timestamp snapshotA
+
+        timestampB =
+            timestamp snapshotB
+
+        cpuCurrent =
+            statCpuTotal (stat snapshotA)
+
+        cpuPrev =
+            statCpuTotal (stat snapshotB)
+
+        totalCurrent =
+            cpuTotal cpuCurrent
+
+        totalPrev =
+            cpuTotal cpuPrev
+
+        idleCurrent =
+            cpuStatIdle cpuCurrent
+
+        idlePrev =
+            cpuStatIdle cpuPrev
+
+        idleDelta =
+            idleCurrent - idlePrev
+                & fromIntegral
+
+        totalDelta =
+            totalCurrent - totalPrev
+                & fromIntegral
+
+        utilisation =
+            100.0 * (1.0 - idleDelta / totalDelta)
+    in
+    if timestampA >= timestampB then
+        Just utilisation
+
+    else
+        Nothing
+
+
+cpuTotal :: CpuStat -> Int
+cpuTotal CpuStat{..} =
+    sum
+        [ cpuStatUser
+        , cpuStatNice
+        , cpuStatSystem
+        , cpuStatIdle
+        , cpuStatIowait
+        , cpuStatIrq
+        , cpuStatSoftIrq
+        , cpuStatSteal
+        , cpuStatGuest
+        , cpuStatGuestNice
+        ]
+
 
 
 

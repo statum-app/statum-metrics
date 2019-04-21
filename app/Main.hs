@@ -44,7 +44,7 @@ devReaderConfig chan =
         , mapper = parseDev
         , toMsg = DevMsg
         , chan = chan
-        , interval = Reader.Second 1
+        , interval = Reader.Second 5
         , historyLength = 1
         }
 
@@ -56,7 +56,7 @@ statReaderConfig chan =
         , mapper = parseStat
         , toMsg = StatMsg
         , chan = chan
-        , interval = Reader.Second 1
+        , interval = Reader.Second 5
         , historyLength = 1
         }
 

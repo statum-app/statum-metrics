@@ -41,10 +41,10 @@ data Msg
 
 
 
-devReaderConfig :: TChan.TChan (Either InputError Msg) -> Interval.Config Msg InputError [Dev.InterfaceSnapshot]
-devReaderConfig chan =
+devReaderConfig :: FilePath -> TChan.TChan (Either InputError Msg) -> Interval.Config Msg InputError [Dev.InterfaceSnapshot]
+devReaderConfig filepath chan =
     Interval.Config
-        { action = Reader.reader "/proc/net/dev"
+        { action = Reader.reader filepath
             & fmap parseDev
         , toMsg = DevMsg
         , chan = chan
@@ -53,10 +53,10 @@ devReaderConfig chan =
         }
 
 
-statReaderConfig :: TChan.TChan (Either InputError Msg) -> Interval.Config Msg InputError Stat.StatSnapshot
-statReaderConfig chan =
+statReaderConfig :: FilePath -> TChan.TChan (Either InputError Msg) -> Interval.Config Msg InputError Stat.StatSnapshot
+statReaderConfig filepath chan =
     Interval.Config
-        { action = Reader.reader "/proc/stat"
+        { action = Reader.reader filepath
             & fmap parseStat
         , toMsg = StatMsg
         , chan = chan
@@ -102,10 +102,10 @@ main = do
     broadcastChan <- TChan.newBroadcastTChan
         & STM.atomically
     broadcastChan
-        & devReaderConfig
+        & devReaderConfig "/proc/net/dev"
         & Interval.start
     broadcastChan
-        & statReaderConfig
+        & statReaderConfig "/proc/stat"
         & Interval.start
     broadcastChan
         & diskSpacePollerConfig "."

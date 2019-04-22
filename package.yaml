@@ -31,6 +31,7 @@ dependencies:
 - safe
 - safe-exceptions
 - mtl
+- disk-free-space
 
 default-extensions:
 - OverloadedStrings

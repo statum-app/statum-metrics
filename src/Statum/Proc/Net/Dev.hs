@@ -88,17 +88,18 @@ networkRate snapshotA snapshotB transferedBytes =
         timestampB =
             timestamp snapshotB
 
-        timestampDiffNano =
+        timeDelta =
             Clock.diffTimeSpec timestampA timestampB
                 & Clock.toNanoSecs
+                & \nano -> nano * 1_000_000_000
                 & fromIntegral
 
-        txDiffNano =
-            (bytesA - bytesB) * 1000000000
+        rateDelta =
+            (bytesA - bytesB)
                 & fromIntegral
 
         bytesPerSecond =
-           (txDiffNano / timestampDiffNano) / 1000000000
+           (rateDelta / timeDelta)
 
     in
     if bytesA >= bytesB && timestampA >= timestampB then

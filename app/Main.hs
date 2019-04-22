@@ -15,6 +15,7 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as TextIO
 import qualified Data.Time.Clock as Clock
 import qualified Safe
+import qualified Statum.Interval as Interval
 import qualified Statum.Proc.Net.Dev as Dev
 import qualified Statum.Proc.Stat as Stat
 import qualified Statum.Reader as Reader
@@ -31,32 +32,36 @@ data InputError
 
 
 data Msg
-    = DevMsg (Reader.Msg [Dev.InterfaceSnapshot])
-    | StatMsg (Reader.Msg Stat.StatSnapshot)
+    = DevMsg (Interval.Msg [Dev.InterfaceSnapshot])
+    | StatMsg (Interval.Msg Stat.StatSnapshot)
     deriving (Show)
 
 
 
-devReaderConfig :: TChan.TChan (Either InputError Msg) -> Reader.Config Msg InputError [Dev.InterfaceSnapshot]
+devReaderConfig :: TChan.TChan (Either InputError Msg) -> Interval.Config Msg InputError [Dev.InterfaceSnapshot]
 devReaderConfig chan =
-    Reader.Config
-        { filepath = "/proc/net/dev"
-        , mapper = parseDev
+    Interval.Config
+        { action = Reader.reader $ Reader.Config
+            { filepath = "/proc/net/dev"
+            , mapper = parseDev
+            }
         , toMsg = DevMsg
         , chan = chan
-        , interval = Reader.Second 5
+        , interval = Interval.Second 5
         , historyLength = 1
         }
 
 
-statReaderConfig :: TChan.TChan (Either InputError Msg) -> Reader.Config Msg InputError Stat.StatSnapshot
+statReaderConfig :: TChan.TChan (Either InputError Msg) -> Interval.Config Msg InputError Stat.StatSnapshot
 statReaderConfig chan =
-    Reader.Config
-        { filepath = "/proc/stat"
-        , mapper = parseStat
+    Interval.Config
+        { action = Reader.reader $ Reader.Config
+            { filepath = "/proc/stat"
+            , mapper = parseStat
+            }
         , toMsg = StatMsg
         , chan = chan
-        , interval = Reader.Second 5
+        , interval = Interval.Second 5
         , historyLength = 1
         }
 
@@ -87,10 +92,10 @@ main = do
         & STM.atomically
     broadcastChan
         & devReaderConfig
-        & Reader.forkReader
+        & Interval.start
     broadcastChan
         & statReaderConfig
-        & Reader.forkReader
+        & Interval.start
     chan <- TChan.dupTChan broadcastChan
         & STM.atomically
     Monad.forever $ do
@@ -143,10 +148,10 @@ handleError reason =
 handleMsg :: Msg -> Either Reason [Metric]
 handleMsg msg =
     case msg of
-        DevMsg Reader.Msg{..} ->
+        DevMsg Interval.Msg{..} ->
             handleDevMsg "eno1" current previous
 
-        StatMsg Reader.Msg{..} ->
+        StatMsg Interval.Msg{..} ->
             handleStatMsg current previous
 
 

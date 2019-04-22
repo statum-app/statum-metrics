@@ -24,6 +24,32 @@ import qualified Statum.Reader as Reader
 
 
 
+main :: IO ()
+main = do
+    broadcastChan <- TChan.newBroadcastTChan
+        & STM.atomically
+    interfacePollerConfig "/proc/net/dev" broadcastChan
+        & Poller.poller
+        & Interval.startWithState (Interval.Second 5) []
+    statPollerConfig "/proc/stat" broadcastChan
+        & Poller.poller
+        & Interval.startWithState (Interval.Second 5) []
+    diskSpacePollerConfig "." broadcastChan
+        & Poller.poller
+        & Interval.startWithState (Interval.Second 5) []
+    chan <- TChan.dupTChan broadcastChan
+        & STM.atomically
+    Monad.forever $ do
+        eitherMsg <- TChan.readTChan chan
+            & STM.atomically
+        case handleEitherMsg eitherMsg of
+            Left reason ->
+                handleError reason
+
+            Right metrics ->
+                mapM_ print metrics
+
+
 
 data InputError
     = ReadDevError Reader.Error
@@ -93,32 +119,6 @@ parseStat eitherResult = do
     Stat.parse fileContents
         & Bifunctor.first ParseStatError
         & fmap (Stat.StatSnapshot timestamp)
-
-
-main :: IO ()
-main = do
-    broadcastChan <- TChan.newBroadcastTChan
-        & STM.atomically
-    interfacePollerConfig "/proc/net/dev" broadcastChan
-        & Poller.poller
-        & Interval.startWithState (Interval.Second 5) []
-    statPollerConfig "/proc/stat" broadcastChan
-        & Poller.poller
-        & Interval.startWithState (Interval.Second 5) []
-    diskSpacePollerConfig "." broadcastChan
-        & Poller.poller
-        & Interval.startWithState (Interval.Second 5) []
-    chan <- TChan.dupTChan broadcastChan
-        & STM.atomically
-    Monad.forever $ do
-        eitherMsg <- TChan.readTChan chan
-            & STM.atomically
-        case handleEitherMsg eitherMsg of
-            Left reason ->
-                handleError reason
-
-            Right metrics ->
-                mapM_ print metrics
 
 
 data Reason

@@ -16,6 +16,7 @@ import qualified Data.Text.IO as TextIO
 import qualified Data.Time.Clock as Clock
 import qualified Safe
 import qualified Statum.Interval as Interval
+import qualified Statum.Metric.DiskSpace as DiskSpace
 import qualified Statum.Proc.Net.Dev as Dev
 import qualified Statum.Proc.Stat as Stat
 import qualified Statum.Reader as Reader
@@ -28,16 +29,19 @@ data InputError
     | ParseDevError String
     | ReadStatError Reader.Error
     | ParseStatError String
+    | GetDiskUsageError DiskSpace.Error
     deriving (Show)
 
 
 data Msg
     = DevMsg (Interval.Msg [Dev.InterfaceSnapshot])
     | StatMsg (Interval.Msg Stat.StatSnapshot)
+    | DiskSpaceMsg (Interval.Msg DiskSpace.DiskUsage)
     deriving (Show)
 
 
 
+-- TODO: remove mapper from reader
 devReaderConfig :: TChan.TChan (Either InputError Msg) -> Interval.Config Msg InputError [Dev.InterfaceSnapshot]
 devReaderConfig chan =
     Interval.Config
@@ -60,6 +64,18 @@ statReaderConfig chan =
             , mapper = parseStat
             }
         , toMsg = StatMsg
+        , chan = chan
+        , interval = Interval.Second 5
+        , historyLength = 1
+        }
+
+
+diskSpacePollerConfig :: FilePath -> TChan.TChan (Either InputError Msg) -> Interval.Config Msg InputError DiskSpace.DiskUsage
+diskSpacePollerConfig filepath chan =
+    Interval.Config
+        { action = \_ -> DiskSpace.getDiskUsage filepath
+            & fmap (Bifunctor.first GetDiskUsageError)
+        , toMsg = DiskSpaceMsg
         , chan = chan
         , interval = Interval.Second 5
         , historyLength = 1
@@ -96,6 +112,9 @@ main = do
     broadcastChan
         & statReaderConfig
         & Interval.start
+    broadcastChan
+        & diskSpacePollerConfig "."
+        & Interval.start
     chan <- TChan.dupTChan broadcastChan
         & STM.atomically
     Monad.forever $ do
@@ -123,6 +142,7 @@ data Metric
     = CpuUtilization Double
     | NetworkTxRate NetworkRateMetric
     | NetworkRxRate NetworkRateMetric
+    | DiskUsage Double
     deriving (Show)
 
 
@@ -154,6 +174,9 @@ handleMsg msg =
         StatMsg Interval.Msg{..} ->
             handleStatMsg current previous
 
+        DiskSpaceMsg Interval.Msg{..} ->
+            handleDiskSpaceMsg current previous
+
 
 handleDevMsg :: T.Text -> [Dev.InterfaceSnapshot] -> [[Dev.InterfaceSnapshot]] -> Either Reason [Metric]
 handleDevMsg ifaceName current previous = do
@@ -184,3 +207,11 @@ handleStatMsg current previous = do
     utilisation <- Stat.cpuUtilisation current prev
         & Combinators.maybeToRight (InvalidCpuUtilisation)
     pure [CpuUtilization utilisation]
+
+
+handleDiskSpaceMsg :: DiskSpace.DiskUsage -> [DiskSpace.DiskUsage]-> Either Reason [Metric]
+handleDiskSpaceMsg current _ = do
+    DiskSpace.usedPercent current
+        & DiskUsage
+        & pure
+        & pure

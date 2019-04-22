@@ -17,6 +17,7 @@ import qualified Data.Time.Clock as Clock
 import qualified Safe
 import qualified Statum.Interval as Interval
 import qualified Statum.Metric.DiskSpace as DiskSpace
+import qualified Statum.Poller as Poller
 import qualified Statum.Proc.Net.Dev as Dev
 import qualified Statum.Proc.Stat as Stat
 import qualified Statum.Reader as Reader
@@ -34,45 +35,42 @@ data InputError
 
 
 data Msg
-    = DevMsg (Interval.Msg [Dev.InterfaceSnapshot])
-    | StatMsg (Interval.Msg Stat.StatSnapshot)
-    | DiskSpaceMsg (Interval.Msg DiskSpace.DiskUsage)
+    = DevMsg (Poller.Msg [Dev.InterfaceSnapshot])
+    | StatMsg (Poller.Msg Stat.StatSnapshot)
+    | DiskSpaceMsg (Poller.Msg DiskSpace.DiskUsage)
     deriving (Show)
 
 
 
-devReaderConfig :: FilePath -> TChan.TChan (Either InputError Msg) -> Interval.Config Msg InputError [Dev.InterfaceSnapshot]
-devReaderConfig filepath chan =
-    Interval.Config
+interfacePollerConfig :: FilePath -> TChan.TChan (Either InputError Msg) -> Poller.Config Msg InputError [Dev.InterfaceSnapshot]
+interfacePollerConfig filepath chan =
+    Poller.Config
         { action = Reader.reader filepath
             & fmap parseDev
         , toMsg = DevMsg
         , chan = chan
-        , interval = Interval.Second 5
         , historyLength = 1
         }
 
 
-statReaderConfig :: FilePath -> TChan.TChan (Either InputError Msg) -> Interval.Config Msg InputError Stat.StatSnapshot
-statReaderConfig filepath chan =
-    Interval.Config
+statPollerConfig :: FilePath -> TChan.TChan (Either InputError Msg) -> Poller.Config Msg InputError Stat.StatSnapshot
+statPollerConfig filepath chan =
+    Poller.Config
         { action = Reader.reader filepath
             & fmap parseStat
         , toMsg = StatMsg
         , chan = chan
-        , interval = Interval.Second 5
         , historyLength = 1
         }
 
 
-diskSpacePollerConfig :: FilePath -> TChan.TChan (Either InputError Msg) -> Interval.Config Msg InputError DiskSpace.DiskUsage
+diskSpacePollerConfig :: FilePath -> TChan.TChan (Either InputError Msg) -> Poller.Config Msg InputError DiskSpace.DiskUsage
 diskSpacePollerConfig filepath chan =
-    Interval.Config
+    Poller.Config
         { action = DiskSpace.getDiskUsage filepath
             & fmap (Bifunctor.first GetDiskUsageError)
         , toMsg = DiskSpaceMsg
         , chan = chan
-        , interval = Interval.Second 5
         , historyLength = 1
         }
 
@@ -101,15 +99,15 @@ main :: IO ()
 main = do
     broadcastChan <- TChan.newBroadcastTChan
         & STM.atomically
-    broadcastChan
-        & devReaderConfig "/proc/net/dev"
-        & Interval.start
-    broadcastChan
-        & statReaderConfig "/proc/stat"
-        & Interval.start
-    broadcastChan
-        & diskSpacePollerConfig "."
-        & Interval.start
+    interfacePollerConfig "/proc/net/dev" broadcastChan
+        & Poller.poller
+        & Interval.startWithState (Interval.Second 5) []
+    statPollerConfig "/proc/stat" broadcastChan
+        & Poller.poller
+        & Interval.startWithState (Interval.Second 5) []
+    diskSpacePollerConfig "." broadcastChan
+        & Poller.poller
+        & Interval.startWithState (Interval.Second 5) []
     chan <- TChan.dupTChan broadcastChan
         & STM.atomically
     Monad.forever $ do
@@ -163,13 +161,13 @@ handleError reason =
 handleMsg :: Msg -> Either Reason [Metric]
 handleMsg msg =
     case msg of
-        DevMsg Interval.Msg{..} ->
+        DevMsg Poller.Msg{..} ->
             handleDevMsg "eno1" current previous
 
-        StatMsg Interval.Msg{..} ->
+        StatMsg Poller.Msg{..} ->
             handleStatMsg current previous
 
-        DiskSpaceMsg Interval.Msg{..} ->
+        DiskSpaceMsg Poller.Msg{..} ->
             handleDiskSpaceMsg current previous
 
 

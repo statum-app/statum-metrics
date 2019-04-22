@@ -1,22 +1,14 @@
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE RecordWildCards #-}
-
 module Statum.Interval
     ( Interval(..)
-    , Config(..)
-    , Msg(..)
-    , start
+    , startWithState
     ) where
 
 
 import Data.Function ((&))
 
 import qualified Control.Concurrent as Concurrent
-import qualified Control.Concurrent.STM as STM
-import qualified Control.Concurrent.STM.TChan as TChan
 import qualified Control.Monad as Monad
 import qualified Control.Monad.State.Strict as State
-import qualified Data.Either as Either
 
 
 data Interval
@@ -26,8 +18,8 @@ data Interval
 
 
 toMicroseconds :: Interval -> Int
-toMicroseconds ival =
-    case ival of
+toMicroseconds interval =
+    case interval of
         Second n ->
             n * 1000000
 
@@ -35,56 +27,19 @@ toMicroseconds ival =
             n * 60 * 1000000
 
 
-
-data Config msg e a = Config
-    { action :: IO (Either e a)
-    , toMsg :: Msg a -> msg
-    , chan :: TChan.TChan (Either e msg)
-    , interval :: Interval
-    , historyLength :: Int
-    }
-
-
-data Msg a = Msg
-    { previous :: [a]
-    , current :: a
-    }
-    deriving (Show)
-
-
-start :: Config msg e a -> IO ()
-start config =
-    State.evalStateT (actionBroadcastLoop config) []
+startWithState :: Interval -> a -> (a -> IO a) -> IO ()
+startWithState interval initialState action =
+    State.evalStateT (foreverStateT interval action) initialState
         & Concurrent.forkIO
         & Monad.void
 
 
-actionBroadcastLoop :: Config msg e a -> State.StateT [a] IO ()
-actionBroadcastLoop config@Config{..} =
+foreverStateT :: Interval -> (a -> IO a) -> State.StateT a IO ()
+foreverStateT interval action =
     Monad.forever $ do
-        previous <- State.get
-        result <- action
+        prevState <- State.get
+        newState <- action prevState
             & State.lift
-        broadcast config result previous
-            & State.lift
-        updateHistory historyLength result
-            & State.modify'
+        State.put newState
         Concurrent.threadDelay (toMicroseconds interval)
             & State.lift
-
-
-broadcast :: Config msg e a -> Either e a -> [a] -> IO ()
-broadcast Config{..} result previous =
-    result
-        & fmap (Msg previous)
-        & fmap toMsg
-        & TChan.writeTChan chan
-        & STM.atomically
-
-
-updateHistory :: Int -> Either e a -> [a] -> [a]
-updateHistory historyLength current previous =
-    current
-        & fmap (: previous)
-        & fmap (take historyLength)
-        & Either.fromRight previous

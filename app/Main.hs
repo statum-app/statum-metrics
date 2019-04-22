@@ -123,7 +123,7 @@ data Metric
 
 data NetworkRateMetric = NetworkRateMetric
     { interfaceName :: T.Text
-    , bytesPerSecond :: Double
+    , bytesPerSecond :: Int
     }
     deriving (Show)
 

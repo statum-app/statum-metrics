@@ -106,10 +106,11 @@ main = do
 
 data Reason
     = Input InputError
-    | MissingPrevious
+    | MissingPreviousInterface
     | InterfaceNotFound T.Text
     | InvalidRate T.Text
-    | InvalidUtilisation
+    | MissingPreviousStat
+    | InvalidCpuUtilisation
     deriving (Show)
 
 
@@ -154,7 +155,7 @@ handleDevMsg ifaceName current previous = do
     currentSnapshot <- Dev.findSnapshot current ifaceName
         & Combinators.maybeToRight (InterfaceNotFound ifaceName)
     prevSnapshots <- Safe.headMay previous
-        & Combinators.maybeToRight MissingPrevious
+        & Combinators.maybeToRight MissingPreviousInterface
     prevSnapshot <- Dev.findSnapshot prevSnapshots ifaceName
         & Combinators.maybeToRight (InterfaceNotFound ifaceName)
     txRate <- Dev.txRate currentSnapshot prevSnapshot
@@ -174,7 +175,7 @@ handleDevMsg ifaceName current previous = do
 handleStatMsg :: Stat.StatSnapshot -> [Stat.StatSnapshot]-> Either Reason [Metric]
 handleStatMsg current previous = do
     prev <- Safe.headMay previous
-        & Combinators.maybeToRight MissingPrevious
+        & Combinators.maybeToRight MissingPreviousStat
     utilisation <- Stat.cpuUtilisation current prev
-        & Combinators.maybeToRight (InvalidUtilisation)
+        & Combinators.maybeToRight (InvalidCpuUtilisation)
     pure [CpuUtilization utilisation]

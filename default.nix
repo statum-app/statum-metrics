@@ -1,5 +1,6 @@
-{ mkDerivation, attoparsec, base, clock, either, hpack, mtl, safe
-, safe-exceptions, stdenv, stm, text, time, transformers
+{ mkDerivation, attoparsec, base, clock, disk-free-space, either
+, hpack, mtl, safe, safe-exceptions, stdenv, stm, text, time
+, transformers
 }:
 mkDerivation {
   pname = "statum-metrics";
@@ -8,17 +9,17 @@ mkDerivation {
   isLibrary = true;
   isExecutable = true;
   libraryHaskellDepends = [
-    attoparsec base clock either mtl safe safe-exceptions stm text time
-    transformers
+    attoparsec base clock disk-free-space either mtl safe
+    safe-exceptions stm text time transformers
   ];
   libraryToolDepends = [ hpack ];
   executableHaskellDepends = [
-    attoparsec base clock either mtl safe safe-exceptions stm text time
-    transformers
+    attoparsec base clock disk-free-space either mtl safe
+    safe-exceptions stm text time transformers
   ];
   testHaskellDepends = [
-    attoparsec base clock either mtl safe safe-exceptions stm text time
-    transformers
+    attoparsec base clock disk-free-space either mtl safe
+    safe-exceptions stm text time transformers
   ];
   preConfigure = "hpack";
   homepage = "https://github.com/prasmussen/statum-metrics#readme";

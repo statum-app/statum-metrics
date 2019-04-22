@@ -45,7 +45,6 @@ default-extensions:
 - BangPatterns
 - DeriveGeneric
 - ScopedTypeVariables
-- NumericUnderscores
 - Strict
 
 library:

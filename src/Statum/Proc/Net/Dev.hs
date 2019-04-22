@@ -91,8 +91,8 @@ networkRate snapshotA snapshotB transferedBytes =
         timeDelta =
             Clock.diffTimeSpec timestampA timestampB
                 & Clock.toNanoSecs
-                & \nano -> nano * 1_000_000_000
                 & fromIntegral
+                & \nano -> nano / 1000000000
 
         rateDelta =
             (bytesA - bytesB)

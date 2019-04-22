@@ -37,7 +37,7 @@ toMicroseconds ival =
 
 
 data Config msg e a = Config
-    { action :: [a] -> IO (Either e a)
+    { action :: IO (Either e a)
     , toMsg :: Msg a -> msg
     , chan :: TChan.TChan (Either e msg)
     , interval :: Interval
@@ -63,7 +63,7 @@ actionBroadcastLoop :: Config msg e a -> State.StateT [a] IO ()
 actionBroadcastLoop config@Config{..} =
     Monad.forever $ do
         previous <- State.get
-        result <- action previous
+        result <- action
             & State.lift
         broadcast config result previous
             & State.lift

@@ -41,14 +41,11 @@ data Msg
 
 
 
--- TODO: remove mapper from reader
 devReaderConfig :: TChan.TChan (Either InputError Msg) -> Interval.Config Msg InputError [Dev.InterfaceSnapshot]
 devReaderConfig chan =
     Interval.Config
-        { action = Reader.reader $ Reader.Config
-            { filepath = "/proc/net/dev"
-            , mapper = parseDev
-            }
+        { action = Reader.reader "/proc/net/dev"
+            & fmap parseDev
         , toMsg = DevMsg
         , chan = chan
         , interval = Interval.Second 5
@@ -59,10 +56,8 @@ devReaderConfig chan =
 statReaderConfig :: TChan.TChan (Either InputError Msg) -> Interval.Config Msg InputError Stat.StatSnapshot
 statReaderConfig chan =
     Interval.Config
-        { action = Reader.reader $ Reader.Config
-            { filepath = "/proc/stat"
-            , mapper = parseStat
-            }
+        { action = Reader.reader "/proc/stat"
+            & fmap parseStat
         , toMsg = StatMsg
         , chan = chan
         , interval = Interval.Second 5
@@ -73,7 +68,7 @@ statReaderConfig chan =
 diskSpacePollerConfig :: FilePath -> TChan.TChan (Either InputError Msg) -> Interval.Config Msg InputError DiskSpace.DiskUsage
 diskSpacePollerConfig filepath chan =
     Interval.Config
-        { action = \_ -> DiskSpace.getDiskUsage filepath
+        { action = DiskSpace.getDiskUsage filepath
             & fmap (Bifunctor.first GetDiskUsageError)
         , toMsg = DiskSpaceMsg
         , chan = chan

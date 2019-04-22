@@ -1,9 +1,5 @@
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE RecordWildCards #-}
-
 module Statum.Reader
-    ( Config(..)
-    , Result(..)
+    ( Result(..)
     , Error(..)
     , reader
     ) where
@@ -19,12 +15,6 @@ import qualified System.Clock as Clock
 
 
 
-data Config e a = Config
-    { filepath :: FilePath
-    , mapper :: Either Error Result -> Either e a
-    }
-
-
 data Result = Result
     { timestamp :: Clock.TimeSpec
     , fileContents :: T.Text
@@ -32,19 +22,17 @@ data Result = Result
     deriving (Show)
 
 
-data Error
-    = ReadError Exception.SomeException
+newtype Error = Error Exception.SomeException
     deriving (Show)
 
 
 
-reader :: Config e a -> [a] -> IO (Either e a)
-reader Config{..} previous = do
+reader :: FilePath -> IO (Either Error Result)
+reader filepath = do
     now <- Clock.getTime Clock.Monotonic
     eitherText <- TextIO.readFile filepath
         & Exception.try
     eitherText
-        & Bifunctor.first ReadError
+        & Bifunctor.first Error
         & fmap (Result now)
-        & mapper
         & pure

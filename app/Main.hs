@@ -18,6 +18,7 @@ import qualified Safe
 import qualified Statum.Interval as Interval
 import qualified Statum.Metric.DiskSpace as DiskSpace
 import qualified Statum.Poller as Poller
+import qualified Statum.Proc.MemInfo as MemInfo
 import qualified Statum.Proc.Net.Dev as Dev
 import qualified Statum.Proc.Stat as Stat
 import qualified Statum.Reader as Reader
@@ -32,6 +33,9 @@ main = do
         & Poller.poller
         & Interval.startWithState (Interval.Second 5) []
     statPollerConfig "/proc/stat" broadcastChan
+        & Poller.poller
+        & Interval.startWithState (Interval.Second 5) []
+    memInfoPollerConfig "/proc/meminfo" broadcastChan
         & Poller.poller
         & Interval.startWithState (Interval.Second 5) []
     diskSpacePollerConfig "." broadcastChan
@@ -56,6 +60,8 @@ data InputError
     | ParseDevError String
     | ReadStatError Reader.Error
     | ParseStatError String
+    | ReadMemInfoError Reader.Error
+    | ParseMemInfoError String
     | GetDiskUsageError DiskSpace.Error
     deriving (Show)
 
@@ -63,6 +69,7 @@ data InputError
 data Msg
     = DevMsg (Poller.Msg [Dev.InterfaceSnapshot])
     | StatMsg (Poller.Msg Stat.StatSnapshot)
+    | MemInfoMsg (Poller.Msg MemInfo.MemInfo)
     | DiskSpaceMsg (Poller.Msg DiskSpace.DiskUsage)
     deriving (Show)
 
@@ -90,6 +97,17 @@ statPollerConfig filepath chan =
         }
 
 
+memInfoPollerConfig :: FilePath -> TChan.TChan (Either InputError Msg) -> Poller.Config Msg InputError MemInfo.MemInfo
+memInfoPollerConfig filepath chan =
+    Poller.Config
+        { action = Reader.reader filepath
+            & fmap parseMemInfo
+        , toMsg = MemInfoMsg
+        , chan = chan
+        , historyLength = 1
+        }
+
+
 diskSpacePollerConfig :: FilePath -> TChan.TChan (Either InputError Msg) -> Poller.Config Msg InputError DiskSpace.DiskUsage
 diskSpacePollerConfig filepath chan =
     Poller.Config
@@ -99,6 +117,7 @@ diskSpacePollerConfig filepath chan =
         , chan = chan
         , historyLength = 1
         }
+
 
 
 parseDev :: Either Reader.Error Reader.Result -> Either InputError [Dev.InterfaceSnapshot]
@@ -121,6 +140,14 @@ parseStat eitherResult = do
         & fmap (Stat.StatSnapshot timestamp)
 
 
+parseMemInfo :: Either Reader.Error Reader.Result -> Either InputError MemInfo.MemInfo
+parseMemInfo eitherResult = do
+    Reader.Result{..} <- eitherResult
+        & Bifunctor.first ReadMemInfoError
+    MemInfo.parse fileContents
+        & Bifunctor.first ParseMemInfoError
+
+
 data Reason
     = Input InputError
     | MissingPreviousInterface
@@ -135,6 +162,7 @@ data Metric
     = CpuUtilization Double
     | NetworkTxRate NetworkRateMetric
     | NetworkRxRate NetworkRateMetric
+    | MemUsage Double
     | DiskUsage Double
     deriving (Show)
 
@@ -166,6 +194,9 @@ handleMsg msg =
 
         StatMsg Poller.Msg{..} ->
             handleStatMsg current previous
+
+        MemInfoMsg Poller.Msg{..} ->
+            handleMemInfoMsg current previous
 
         DiskSpaceMsg Poller.Msg{..} ->
             handleDiskSpaceMsg current previous
@@ -200,6 +231,14 @@ handleStatMsg current previous = do
     utilisation <- Stat.cpuUtilisation current prev
         & Combinators.maybeToRight (InvalidCpuUtilisation)
     pure [CpuUtilization utilisation]
+
+
+handleMemInfoMsg :: MemInfo.MemInfo -> [MemInfo.MemInfo]-> Either Reason [Metric]
+handleMemInfoMsg current previous = do
+    MemInfo.usedPercent current
+        & MemUsage
+        & pure
+        & pure
 
 
 handleDiskSpaceMsg :: DiskSpace.DiskUsage -> [DiskSpace.DiskUsage]-> Either Reason [Metric]

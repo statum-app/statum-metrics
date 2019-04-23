@@ -32,7 +32,7 @@ parse input = do
 
 usedPercent :: MemInfo -> Double
 usedPercent MemInfo{..} =
-    1 - (fromIntegral memFree / fromIntegral memTotal)
+    1 - (fromIntegral memAvailable / fromIntegral memTotal)
 
 
 memInfoParser :: Parser.Parser MemInfo

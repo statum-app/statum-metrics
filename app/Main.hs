@@ -100,11 +100,13 @@ data InputError
 
 
 data Msg
-    = DevMsg (Poller.Msg [Dev.InterfaceSnapshot])
+    = InterfaceDevMsg (Poller.Msg [Dev.InterfaceSnapshot])
     | StatMsg (Poller.Msg Stat.StatSnapshot)
     | MemInfoMsg (Poller.Msg MemInfo.MemInfo)
     | DiskSpaceMsg (Poller.Msg DiskSpace.DiskUsage)
     deriving (Show)
+
+
 
 
 
@@ -113,7 +115,7 @@ interfacePollerConfig filepath chan =
     Poller.Config
         { action = Reader.reader filepath
             & fmap parseDev
-        , toMsg = DevMsg
+        , toMsg = InterfaceDevMsg
         , chan = chan
         , historyLength = 1
         }
@@ -207,7 +209,7 @@ handleError reason =
 handleMsg :: Msg -> Either Reason [Metric]
 handleMsg msg =
     case msg of
-        DevMsg Poller.Msg{..} ->
+        InterfaceDevMsg Poller.Msg{..} ->
             handleDevMsg "eno1" current previous
 
         StatMsg Poller.Msg{..} ->

@@ -22,6 +22,7 @@ description:         Please see the README on GitHub at <https://github.com/pras
 dependencies:
 - base >= 4.7 && < 5
 - text
+- bytestring
 - attoparsec
 - transformers
 - either
@@ -32,6 +33,10 @@ dependencies:
 - safe-exceptions
 - mtl
 - disk-free-space
+- aeson
+- http-client
+- http-client-tls
+- http-types
 
 default-extensions:
 - OverloadedStrings

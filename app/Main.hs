@@ -16,6 +16,7 @@ import qualified Data.Either.Combinators as Combinators
 import qualified Data.Text as T
 import qualified Data.Text.IO as TextIO
 import qualified Data.Time.Clock as Clock
+import qualified Network.HTTP.Client.TLS as TLSClient
 import qualified Safe
 import qualified Statum.Interval as Interval
 import qualified Statum.Metric as Metric
@@ -27,9 +28,9 @@ import qualified Statum.Proc.Stat as Stat
 import qualified Statum.Reader as Reader
 
 
-
 main :: IO ()
 main = do
+    manager <- TLSClient.newTlsManager
     broadcastChan <- TChan.newBroadcastTChan
         & STM.atomically
     interfacePollerConfig "/proc/net/dev" broadcastChan

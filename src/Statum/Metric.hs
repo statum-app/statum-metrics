@@ -27,6 +27,7 @@ data Metric
 
 
 
+-- TODO: Need TimestampValue
 data Value a = Value
     { current :: a
     , previous :: [a]

@@ -16,8 +16,11 @@ import qualified Data.Either.Combinators as Combinators
 import qualified Data.Text as T
 import qualified Data.Text.IO as TextIO
 import qualified Data.Time.Clock as Clock
+import qualified Dhall as Dhall
+import qualified GHC.Generics as GHC
 import qualified Network.HTTP.Client.TLS as TLSClient
 import qualified Safe
+import qualified Statum.Api as Api
 import qualified Statum.Interval as Interval
 import qualified Statum.Metric as Metric
 import qualified Statum.Metric.DiskSpace as DiskSpace
@@ -28,8 +31,33 @@ import qualified Statum.Proc.Stat as Stat
 import qualified Statum.Reader as Reader
 
 
+
+data Config = Config
+    { widgetFunctions :: WidgetFunctions
+    }
+    deriving (GHC.Generic)
+
+instance Dhall.Interpret Config
+
+
+data WidgetFunctions = WidgetFunctions
+    { diskUsageWidget :: Double -> [Double] -> Api.Widget
+    }
+    deriving (GHC.Generic)
+
+instance Dhall.Interpret WidgetFunctions
+
+
+
+getConfig :: IO Config
+getConfig =
+    Dhall.detailed (Dhall.input Dhall.auto "./config.dhall")
+
+
 main :: IO ()
 main = do
+    Config{widgetFunctions=WidgetFunctions{..}} <- getConfig
+    print (diskUsageWidget 50 [])
     manager <- TLSClient.newTlsManager
     broadcastChan <- TChan.newBroadcastTChan
         & STM.atomically

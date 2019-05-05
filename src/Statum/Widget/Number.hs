@@ -4,8 +4,8 @@
 {-# LANGUAGE TypeOperators #-}
 
 
-module Statum.Widget.Meter
-    ( Meter(..)
+module Statum.Widget.Number
+    ( Number(..)
     ) where
 
 
@@ -18,13 +18,15 @@ import qualified GHC.Generics as GHC
 
 
 
-data Meter = Meter
+data Number = Number
     { title :: T.Text
-    , value :: Double
+    , current :: Double
+    , previous :: Double
+    , moreInfo :: T.Text
     }
     deriving (Show, GHC.Generic)
 
 
-instance Aeson.FromJSON Meter
-instance Aeson.ToJSON Meter
-instance Dhall.Interpret Meter
+instance Aeson.FromJSON Number
+instance Aeson.ToJSON Number
+instance Dhall.Interpret Number

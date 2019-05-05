@@ -12,10 +12,14 @@ import Data.Function ((&))
 
 import qualified Data.Aeson as Aeson
 import qualified Data.ByteString.Lazy as LBS
+import qualified Data.Text as T
+import qualified Dhall
+import qualified GHC.Generics as GHC
 import qualified Network.HTTP.Client as Client
 import qualified Network.HTTP.Types.Method as Method
 import qualified Network.HTTP.Types.Status as Status
 import qualified Statum.Widget.Meter as Meter
+import qualified Statum.Widget.Number as Number
 
 
 type BaseUrl = String
@@ -26,8 +30,12 @@ type WidgetId = String
 
 
 data Widget
-    = Meter WidgetId Meter.Meter
-    deriving (Show)
+    = MeterWidget { widgetId :: String, meter :: Meter.Meter }
+    | NumberWidget { widgetId :: String, number :: Number.Number }
+    deriving (Show, GHC.Generic)
+
+
+instance Dhall.Interpret Widget
 
 
 newtype Request = Request Client.Request
@@ -45,7 +53,7 @@ data Response = Response
 prepareRequest :: BaseUrl -> Widget -> Request
 prepareRequest baseUrl widget =
     case widget of
-        Meter widgetId body ->
+        MeterWidget widgetId body ->
             "/api/widgets/meter/" ++ widgetId
                 & buildRequest body baseUrl
 

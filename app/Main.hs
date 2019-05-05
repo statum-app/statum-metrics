@@ -4,6 +4,8 @@
 module Main where
 
 import Data.Function ((&))
+import Statum.Metric (Metric)
+
 
 import qualified Control.Concurrent as Concurrent
 import qualified Control.Concurrent.STM as STM
@@ -16,6 +18,7 @@ import qualified Data.Text.IO as TextIO
 import qualified Data.Time.Clock as Clock
 import qualified Safe
 import qualified Statum.Interval as Interval
+import qualified Statum.Metric as Metric
 import qualified Statum.Metric.DiskSpace as DiskSpace
 import qualified Statum.Poller as Poller
 import qualified Statum.Proc.MemInfo as MemInfo
@@ -44,6 +47,7 @@ main = do
     chan <- TChan.dupTChan broadcastChan
         & STM.atomically
     Monad.forever $ do
+        -- TODO: channel may build up if api is slow
         eitherMsg <- TChan.readTChan chan
             & STM.atomically
         case handleEitherMsg eitherMsg of
@@ -158,21 +162,6 @@ data Reason
     deriving (Show)
 
 
-data Metric
-    = CpuUtilization Double
-    | NetworkTxRate NetworkRateMetric
-    | NetworkRxRate NetworkRateMetric
-    | MemUsage Double
-    | DiskUsage Double
-    deriving (Show)
-
-
-data NetworkRateMetric = NetworkRateMetric
-    { interfaceName :: T.Text
-    , bytesPerSecond :: Int
-    }
-    deriving (Show)
-
 
 handleEitherMsg :: Either InputError Msg -> Either Reason [Metric]
 handleEitherMsg eitherMsg = do
@@ -214,36 +203,34 @@ handleDevMsg ifaceName current previous = do
         & Combinators.maybeToRight (InvalidRate ifaceName)
     rxRate <- Dev.rxRate currentSnapshot prevSnapshot
         & Combinators.maybeToRight (InvalidRate ifaceName)
+    -- TODO: send previous values
     pure
-        [ txRate
-            & NetworkRateMetric ifaceName
-            & NetworkTxRate
-        , rxRate
-            & NetworkRateMetric ifaceName
-            & NetworkRxRate
+        [ Metric.networkTxRate ifaceName txRate []
+        , Metric.networkRxRate ifaceName rxRate []
         ]
 
 
-handleStatMsg :: Stat.StatSnapshot -> [Stat.StatSnapshot]-> Either Reason [Metric]
+handleStatMsg :: Stat.StatSnapshot -> [Stat.StatSnapshot] -> Either Reason [Metric]
 handleStatMsg current previous = do
     prev <- Safe.headMay previous
         & Combinators.maybeToRight MissingPreviousStat
     utilisation <- Stat.cpuUtilisation current prev
         & Combinators.maybeToRight (InvalidCpuUtilisation)
-    pure [CpuUtilization utilisation]
-
-
-handleMemInfoMsg :: MemInfo.MemInfo -> [MemInfo.MemInfo]-> Either Reason [Metric]
-handleMemInfoMsg current previous = do
-    MemInfo.usedPercent current
-        & MemUsage
+    -- TODO: send previous values
+    Metric.cpuUtilization utilisation []
         & pure
         & pure
 
 
-handleDiskSpaceMsg :: DiskSpace.DiskUsage -> [DiskSpace.DiskUsage]-> Either Reason [Metric]
-handleDiskSpaceMsg current _ = do
-    DiskSpace.usedPercent current
-        & DiskUsage
+handleMemInfoMsg :: MemInfo.MemInfo -> [MemInfo.MemInfo] -> Either Reason [Metric]
+handleMemInfoMsg current previous =
+    Metric.memUsage (MemInfo.usedPercent current) (map MemInfo.usedPercent previous)
+        & pure
+        & pure
+
+
+handleDiskSpaceMsg :: DiskSpace.DiskUsage -> [DiskSpace.DiskUsage] -> Either Reason [Metric]
+handleDiskSpaceMsg current previous =
+    Metric.diskUsage (DiskSpace.usedPercent current) (map DiskSpace.usedPercent previous)
         & pure
         & pure

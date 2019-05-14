@@ -3,6 +3,8 @@ module Statum.Task
     ) where
 
 
+import qualified Dhall
+import qualified GHC.Generics as GHC
 import qualified Statum.Task.DiskSpacePoller as DiskSpacePoller
 import qualified Statum.Task.InterfacePoller as InterfacePoller
 import qualified Statum.Task.MemInfoPoller as MemInfoPoller
@@ -14,5 +16,6 @@ data Task
     | StatPoller StatPoller.Config
     | MemInfoPoller MemInfoPoller.Config
     | DiskSpacePoller DiskSpacePoller.Config
+    deriving (GHC.Generic)
 
-
+instance Dhall.Interpret Task

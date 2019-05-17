@@ -49,7 +49,8 @@ getConfig =
 
 main :: IO ()
 main = do
-    --Config{widgetFunctions=WidgetFunctions{..}} <- getConfig
+    Config{..} <- getConfig
+    print (length tasks)
     --print (diskUsageWidget 50 [])
     manager <- TLSClient.newTlsManager
     broadcastChan <- TChan.newBroadcastTChan

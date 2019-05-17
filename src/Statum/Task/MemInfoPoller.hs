@@ -15,7 +15,7 @@ data Config = Config
     { filepath :: T.Text
     , interval :: Dhall.Natural
     , historyLength :: Dhall.Natural
-    , metrics :: [Metric]
+    -- , metrics :: [Metric]
     }
     deriving (GHC.Generic)
 

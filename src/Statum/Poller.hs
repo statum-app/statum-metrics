@@ -9,6 +9,7 @@ module Statum.Poller
 
 
 import Data.Function ((&))
+import Numeric.Natural (Natural)
 
 import qualified Control.Concurrent.STM as STM
 import qualified Control.Concurrent.STM.TChan as TChan
@@ -20,7 +21,7 @@ data Config msg e a = Config
     { action :: IO (Either e a)
     , toMsg :: Msg a -> msg
     , chan :: TChan.TChan (Either e msg)
-    , historyLength :: Int
+    , historyLength :: Natural
     }
 
 
@@ -48,9 +49,9 @@ broadcast Config{..} result previous =
         & STM.atomically
 
 
-updateHistory :: Int -> Either e a -> [a] -> [a]
+updateHistory :: Natural -> Either e a -> [a] -> [a]
 updateHistory historyLength current previous =
     current
         & fmap (: previous)
-        & fmap (take historyLength)
+        & fmap (take (fromIntegral historyLength))
         & Either.fromRight previous

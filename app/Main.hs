@@ -30,6 +30,8 @@ import qualified Statum.Proc.Net.Dev as Dev
 import qualified Statum.Proc.Stat as Stat
 import qualified Statum.Reader as Reader
 import qualified Statum.Task as Task
+import qualified Statum.Task.DiskSpacePoller as DiskSpacePoller
+import qualified Statum.Task.MemInfoPoller as MemInfoPoller
 
 
 
@@ -50,23 +52,16 @@ getConfig =
 main :: IO ()
 main = do
     Config{..} <- getConfig
-    print (length tasks)
-    --print (diskUsageWidget 50 [])
     manager <- TLSClient.newTlsManager
     broadcastChan <- TChan.newBroadcastTChan
         & STM.atomically
-    interfacePollerConfig "/proc/net/dev" broadcastChan
-        & Poller.poller
-        & Interval.startWithState (Interval.Second 5) []
-    statPollerConfig "/proc/stat" broadcastChan
-        & Poller.poller
-        & Interval.startWithState (Interval.Second 5) []
-    memInfoPollerConfig "/proc/meminfo" broadcastChan
-        & Poller.poller
-        & Interval.startWithState (Interval.Second 5) []
-    diskSpacePollerConfig "." broadcastChan
-        & Poller.poller
-        & Interval.startWithState (Interval.Second 5) []
+    mapM_ (startTask broadcastChan) tasks
+    --interfacePollerConfig "/proc/net/dev" broadcastChan
+    --    & Poller.poller
+    --    & Interval.startWithState (Interval.Second 5) []
+    --statPollerConfig "/proc/stat" broadcastChan
+    --    & Poller.poller
+    --    & Interval.startWithState (Interval.Second 5) []
     chan <- TChan.dupTChan broadcastChan
         & STM.atomically
     Monad.forever $ do
@@ -80,6 +75,19 @@ main = do
             Right metrics ->
                 mapM_ print metrics
 
+
+startTask :: TChan.TChan (Either InputError Msg) -> Task.Task -> IO ()
+startTask chan task =
+    case task of
+        Task.MemInfoPoller config@MemInfoPoller.Config{..} ->
+            memInfoPollerConfig config chan
+                & Poller.poller
+                & Interval.startWithState (Interval.Second interval) []
+
+        Task.DiskSpacePoller config@DiskSpacePoller.Config{..} ->
+            diskSpacePollerConfig config chan
+                & Poller.poller
+                & Interval.startWithState (Interval.Second interval) []
 
 
 data InputError
@@ -104,47 +112,47 @@ data Msg
 
 
 
-interfacePollerConfig :: FilePath -> TChan.TChan (Either InputError Msg) -> Poller.Config Msg InputError [Dev.InterfaceSnapshot]
-interfacePollerConfig filepath chan =
-    Poller.Config
-        { action = Reader.reader filepath
-            & fmap parseDev
-        , toMsg = InterfaceDevMsg
-        , chan = chan
-        , historyLength = 1
-        }
+--interfacePollerConfig :: FilePath -> TChan.TChan (Either InputError Msg) -> Poller.Config Msg InputError [Dev.InterfaceSnapshot]
+--interfacePollerConfig filepath chan =
+--    Poller.Config
+--        { action = Reader.reader filepath
+--            & fmap parseDev
+--        , toMsg = InterfaceDevMsg
+--        , chan = chan
+--        , historyLength = 1
+--        }
+--
+--
+--statPollerConfig :: FilePath -> TChan.TChan (Either InputError Msg) -> Poller.Config Msg InputError Stat.StatSnapshot
+--statPollerConfig filepath chan =
+--    Poller.Config
+--        { action = Reader.reader filepath
+--            & fmap parseStat
+--        , toMsg = StatMsg
+--        , chan = chan
+--        , historyLength = 1
+--        }
 
 
-statPollerConfig :: FilePath -> TChan.TChan (Either InputError Msg) -> Poller.Config Msg InputError Stat.StatSnapshot
-statPollerConfig filepath chan =
-    Poller.Config
-        { action = Reader.reader filepath
-            & fmap parseStat
-        , toMsg = StatMsg
-        , chan = chan
-        , historyLength = 1
-        }
-
-
-memInfoPollerConfig :: FilePath -> TChan.TChan (Either InputError Msg) -> Poller.Config Msg InputError MemInfo.MemInfo
-memInfoPollerConfig filepath chan =
+memInfoPollerConfig :: MemInfoPoller.Config -> TChan.TChan (Either InputError Msg) -> Poller.Config Msg InputError MemInfo.MemInfo
+memInfoPollerConfig MemInfoPoller.Config{..} chan =
     Poller.Config
         { action = Reader.reader filepath
             & fmap parseMemInfo
         , toMsg = MemInfoMsg
         , chan = chan
-        , historyLength = 1
+        , historyLength = historyLength
         }
 
 
-diskSpacePollerConfig :: FilePath -> TChan.TChan (Either InputError Msg) -> Poller.Config Msg InputError DiskSpace.DiskUsage
-diskSpacePollerConfig filepath chan =
+diskSpacePollerConfig :: DiskSpacePoller.Config -> TChan.TChan (Either InputError Msg) -> Poller.Config Msg InputError DiskSpace.DiskUsage
+diskSpacePollerConfig DiskSpacePoller.Config{..} chan =
     Poller.Config
         { action = DiskSpace.getDiskUsage filepath
             & fmap (Bifunctor.first GetDiskUsageError)
         , toMsg = DiskSpaceMsg
         , chan = chan
-        , historyLength = 1
+        , historyLength = historyLength
         }
 
 

@@ -5,6 +5,7 @@ module Statum.Interval
 
 
 import Data.Function ((&))
+import Numeric.Natural (Natural)
 
 import qualified Control.Concurrent as Concurrent
 import qualified Control.Monad as Monad
@@ -12,12 +13,12 @@ import qualified Control.Monad.State.Strict as State
 
 
 data Interval
-    = Second Int
-    | Minute Int
+    = Second Natural
+    | Minute Natural
     deriving (Show)
 
 
-toMicroseconds :: Interval -> Int
+toMicroseconds :: Interval -> Natural
 toMicroseconds interval =
     case interval of
         Second n ->
@@ -34,6 +35,14 @@ startWithState interval initialState action =
         & Monad.void
 
 
+sleep :: Interval -> IO ()
+sleep interval =
+    interval
+        & toMicroseconds
+        & fromIntegral
+        & Concurrent.threadDelay
+
+
 foreverStateT :: Interval -> (a -> IO a) -> State.StateT a IO ()
 foreverStateT interval action =
     Monad.forever $ do
@@ -41,5 +50,5 @@ foreverStateT interval action =
         newState <- action prevState
             & State.lift
         State.put newState
-        Concurrent.threadDelay (toMicroseconds interval)
+        sleep interval
             & State.lift

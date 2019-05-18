@@ -12,7 +12,7 @@ import qualified Statum.Api as Api
 
 
 data Config = Config
-    { filepath :: T.Text
+    { filepath :: FilePath
     , interval :: Dhall.Natural
     , historyLength :: Dhall.Natural
     --, metrics :: [Metric]

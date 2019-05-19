@@ -25,9 +25,6 @@ let DiskSpaceMetric =
     < GetDiskUsage :
         { toWidget : ∀(current : Double) → ∀(previous : List Double) → Widget
         }
-    | Void :
-        { noOp : Bool
-        }
     >
 
 let Task =

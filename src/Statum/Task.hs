@@ -8,11 +8,9 @@ module Statum.Task
 import Data.Function ((&))
 
 import qualified Data.Text as T
-import qualified Dhall
 import qualified Dhall.Core as Core
+import qualified Dhall.Extra as Dhall
 import qualified Dhall.Map as Map
-import qualified Dhall.Parser as Parser
-import qualified Dhall.TypeCheck as TypeCheck
 import qualified GHC.Generics as GHC
 import qualified Statum.Task.DiskSpacePoller as DiskSpacePoller
 import qualified Statum.Task.InterfacePoller as InterfacePoller
@@ -40,10 +38,10 @@ taskInterpreter = Dhall.Type{..}
         extract (Core.UnionLit type_ expr _) =
             case type_ of
                 "MemInfoPoller" ->
-                    extractTask MemInfoPoller expr
+                    Dhall.extractAuto MemInfoPoller expr
 
                 "DiskSpacePoller" ->
-                    extractTask DiskSpacePoller expr
+                    Dhall.extractAuto DiskSpacePoller expr
 
                 _ ->
                     "Unsupported task type: " <> type_
@@ -56,20 +54,6 @@ taskInterpreter = Dhall.Type{..}
         expected =
             Core.Union $
                 Map.fromList
-                    [ ("MemInfoPoller", expectedTask MemInfoPoller)
-                    , ("DiskSpacePoller", expectedTask DiskSpacePoller)
+                    [ ("MemInfoPoller", Dhall.expectedAuto MemInfoPoller)
+                    , ("DiskSpacePoller", Dhall.expectedAuto DiskSpacePoller)
                     ]
-
-
-extractTask :: Dhall.Interpret a => (a -> Task) -> Core.Expr Parser.Src TypeCheck.X -> Maybe Task
-extractTask toTask expr =
-    Dhall.auto
-        & fmap toTask
-        & \value -> Dhall.extract value expr
-
-
-expectedTask :: Dhall.Interpret a => (a -> Task) -> Core.Expr Parser.Src TypeCheck.X
-expectedTask toTask =
-    Dhall.auto
-        & fmap toTask
-        & Dhall.expected

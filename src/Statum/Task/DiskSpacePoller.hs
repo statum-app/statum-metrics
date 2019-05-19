@@ -10,11 +10,9 @@ module Statum.Task.DiskSpacePoller
 import Data.Function ((&))
 
 import qualified Data.Text as T
-import qualified Dhall
 import qualified Dhall.Core as Core
+import qualified Dhall.Extra as Dhall
 import qualified Dhall.Map as Map
-import qualified Dhall.Parser as Parser
-import qualified Dhall.TypeCheck as TypeCheck
 import qualified GHC.Generics as GHC
 import qualified Statum.Api as Api
 
@@ -30,27 +28,22 @@ data Config = Config
 instance Dhall.Interpret Config
 
 
-
 data Metric
     = GetDiskUsage DiskUsage
-    | Void NoOp
     deriving (GHC.Generic)
 
 
 instance Dhall.Interpret Metric where
-    autoWith _ = taskInterpreter
+    autoWith _ = intepreter
 
 
-taskInterpreter :: Dhall.Type Metric
-taskInterpreter = Dhall.Type{..}
+intepreter :: Dhall.Type Metric
+intepreter = Dhall.Type{..}
     where
         extract (Core.UnionLit type_ expr _) =
             case type_ of
                 "GetDiskUsage" ->
-                    extractTask GetDiskUsage expr
-
-                "Void" ->
-                    extractTask Void expr
+                    Dhall.extractAuto GetDiskUsage expr
 
                 _ ->
                     "Unsupported metric type: " <> type_
@@ -63,24 +56,8 @@ taskInterpreter = Dhall.Type{..}
         expected =
             Core.Union $
                 Map.fromList
-                    [ ("GetDiskUsage", expectedTask GetDiskUsage)
-                    , ("Void", expectedTask Void)
+                    [ ("GetDiskUsage", Dhall.expectedAuto GetDiskUsage)
                     ]
-
-
-extractTask :: Dhall.Interpret a => (a -> Metric) -> Core.Expr Parser.Src TypeCheck.X -> Maybe Metric
-extractTask toTask expr =
-    Dhall.auto
-        & fmap toTask
-        & \value -> Dhall.extract value expr
-
-
-expectedTask :: Dhall.Interpret a => (a -> Metric) -> Core.Expr Parser.Src TypeCheck.X
-expectedTask toTask =
-    Dhall.auto
-        & fmap toTask
-        & Dhall.expected
-
 
 
 data DiskUsage = DiskUsage
@@ -89,12 +66,3 @@ data DiskUsage = DiskUsage
     deriving (GHC.Generic)
 
 instance Dhall.Interpret DiskUsage
-
-
-
-data NoOp = NoOp
-    { noOp :: Bool
-    }
-    deriving (GHC.Generic)
-
-instance Dhall.Interpret NoOp

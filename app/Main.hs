@@ -276,6 +276,3 @@ getDiskSpaceMetric current previous metric =
         DiskSpacePoller.GetDiskUsage config ->
             Metric.diskUsage (DiskSpace.usedPercent current) (map DiskSpace.usedPercent previous)
                 & pure
-
-        DiskSpacePoller.Void _ ->
-            error "TODO: get rid of Void"

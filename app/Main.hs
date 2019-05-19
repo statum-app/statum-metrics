@@ -68,12 +68,19 @@ main = do
         -- TODO: channel may build up if api is slow
         eitherMsg <- TChan.readTChan chan
             & STM.atomically
-        case handleEitherMsg eitherMsg of
-            Left reason ->
-                handleError reason
+        handleEitherMsg eitherMsg
+            & mapM_ handleMetric
 
-            Right metrics ->
-                mapM_ print metrics
+
+handleMetric :: Either Reason Metric -> IO ()
+handleMetric res =
+    case res of
+        Left reason ->
+            handleError reason
+
+        Right metric ->
+            print metric
+
 
 
 startTask :: TChan.TChan (Either InputError Msg) -> Task.Task -> IO ()
@@ -105,8 +112,7 @@ data Msg
     = InterfaceDevMsg (Poller.Msg [Dev.InterfaceSnapshot])
     | StatMsg (Poller.Msg Stat.StatSnapshot)
     | MemInfoMsg (Poller.Msg MemInfo.MemInfo)
-    | DiskSpaceMsg (Poller.Msg DiskSpace.DiskUsage)
-    deriving (Show)
+    | DiskSpaceMsg [DiskSpacePoller.Metric] (Poller.Msg DiskSpace.DiskUsage)
 
 
 
@@ -150,7 +156,7 @@ diskSpacePollerConfig DiskSpacePoller.Config{..} chan =
     Poller.Config
         { action = DiskSpace.getDiskUsage filepath
             & fmap (Bifunctor.first GetDiskUsageError)
-        , toMsg = DiskSpaceMsg
+        , toMsg = DiskSpaceMsg metrics
         , chan = chan
         , historyLength = historyLength
         }
@@ -196,11 +202,14 @@ data Reason
 
 
 
-handleEitherMsg :: Either InputError Msg -> Either Reason [Metric]
+handleEitherMsg :: Either InputError Msg -> [Either Reason Metric]
 handleEitherMsg eitherMsg = do
-    msg <- eitherMsg
-        & Bifunctor.first Input
-    handleMsg msg
+    case eitherMsg of
+        Left err ->
+            [Left (Input err)]
+
+        Right msg ->
+            handleMsg msg
 
 
 handleError :: Reason -> IO ()
@@ -208,62 +217,65 @@ handleError reason =
     print ("reason", reason)
 
 
-handleMsg :: Msg -> Either Reason [Metric]
+handleMsg :: Msg -> [Either Reason Metric]
 handleMsg msg =
     case msg of
-        InterfaceDevMsg Poller.Msg{..} ->
-            handleDevMsg "eno1" current previous
+        --InterfaceDevMsg Poller.Msg{..} ->
+        --    handleDevMsg "eno1" current previous
 
-        StatMsg Poller.Msg{..} ->
-            handleStatMsg current previous
+        --StatMsg Poller.Msg{..} ->
+        --    handleStatMsg current previous
 
         MemInfoMsg Poller.Msg{..} ->
-            handleMemInfoMsg current previous
+            [handleMemInfoMsg current previous]
 
-        DiskSpaceMsg Poller.Msg{..} ->
-            handleDiskSpaceMsg current previous
-
-
-handleDevMsg :: T.Text -> [Dev.InterfaceSnapshot] -> [[Dev.InterfaceSnapshot]] -> Either Reason [Metric]
-handleDevMsg ifaceName current previous = do
-    currentSnapshot <- Dev.findSnapshot current ifaceName
-        & Combinators.maybeToRight (InterfaceNotFound ifaceName)
-    prevSnapshots <- Safe.headMay previous
-        & Combinators.maybeToRight MissingPreviousInterface
-    prevSnapshot <- Dev.findSnapshot prevSnapshots ifaceName
-        & Combinators.maybeToRight (InterfaceNotFound ifaceName)
-    txRate <- Dev.txRate currentSnapshot prevSnapshot
-        & Combinators.maybeToRight (InvalidRate ifaceName)
-    rxRate <- Dev.rxRate currentSnapshot prevSnapshot
-        & Combinators.maybeToRight (InvalidRate ifaceName)
-    -- TODO: send previous values
-    pure
-        [ Metric.networkTxRate ifaceName txRate []
-        , Metric.networkRxRate ifaceName rxRate []
-        ]
+        DiskSpaceMsg metrics Poller.Msg{..} ->
+            map (getDiskSpaceMetric current previous) metrics
 
 
-handleStatMsg :: Stat.StatSnapshot -> [Stat.StatSnapshot] -> Either Reason [Metric]
-handleStatMsg current previous = do
-    prev <- Safe.headMay previous
-        & Combinators.maybeToRight MissingPreviousStat
-    utilisation <- Stat.cpuUtilisation current prev
-        & Combinators.maybeToRight (InvalidCpuUtilisation)
-    -- TODO: send previous values
-    Metric.cpuUtilization utilisation []
-        & pure
-        & pure
-
-
-handleMemInfoMsg :: MemInfo.MemInfo -> [MemInfo.MemInfo] -> Either Reason [Metric]
+--handleDevMsg :: T.Text -> [Dev.InterfaceSnapshot] -> [[Dev.InterfaceSnapshot]] -> Either Reason Metric
+--handleDevMsg ifaceName current previous = do
+--    currentSnapshot <- Dev.findSnapshot current ifaceName
+--        & Combinators.maybeToRight (InterfaceNotFound ifaceName)
+--    prevSnapshots <- Safe.headMay previous
+--        & Combinators.maybeToRight MissingPreviousInterface
+--    prevSnapshot <- Dev.findSnapshot prevSnapshots ifaceName
+--        & Combinators.maybeToRight (InterfaceNotFound ifaceName)
+--    txRate <- Dev.txRate currentSnapshot prevSnapshot
+--        & Combinators.maybeToRight (InvalidRate ifaceName)
+--    rxRate <- Dev.rxRate currentSnapshot prevSnapshot
+--        & Combinators.maybeToRight (InvalidRate ifaceName)
+--    -- TODO: send previous values
+--    pure
+--        [ Metric.networkTxRate ifaceName txRate []
+--        , Metric.networkRxRate ifaceName rxRate []
+--        ]
+--
+--
+--handleStatMsg :: Stat.StatSnapshot -> [Stat.StatSnapshot] -> Either Reason Metric
+--handleStatMsg current previous = do
+--    prev <- Safe.headMay previous
+--        & Combinators.maybeToRight MissingPreviousStat
+--    utilisation <- Stat.cpuUtilisation current prev
+--        & Combinators.maybeToRight (InvalidCpuUtilisation)
+--    -- TODO: send previous values
+--    Metric.cpuUtilization utilisation []
+--        & pure
+--        & pure
+--
+--
+handleMemInfoMsg :: MemInfo.MemInfo -> [MemInfo.MemInfo] -> Either Reason Metric
 handleMemInfoMsg current previous =
     Metric.memUsage (MemInfo.usedPercent current) (map MemInfo.usedPercent previous)
         & pure
-        & pure
 
 
-handleDiskSpaceMsg :: DiskSpace.DiskUsage -> [DiskSpace.DiskUsage] -> Either Reason [Metric]
-handleDiskSpaceMsg current previous =
-    Metric.diskUsage (DiskSpace.usedPercent current) (map DiskSpace.usedPercent previous)
-        & pure
-        & pure
+getDiskSpaceMetric :: DiskSpace.DiskUsage -> [DiskSpace.DiskUsage] -> DiskSpacePoller.Metric -> Either Reason Metric
+getDiskSpaceMetric current previous metric =
+    case metric of
+        DiskSpacePoller.GetDiskUsage config ->
+            Metric.diskUsage (DiskSpace.usedPercent current) (map DiskSpace.usedPercent previous)
+                & pure
+
+        DiskSpacePoller.Void _ ->
+            error "TODO: get rid of Void"

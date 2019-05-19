@@ -69,17 +69,17 @@ main = do
         eitherMsg <- TChan.readTChan chan
             & STM.atomically
         handleEitherMsg eitherMsg
-            & mapM_ handleMetric
+            & mapM_ handleWidget
 
 
-handleMetric :: Either Reason Metric -> IO ()
-handleMetric res =
+handleWidget :: Either Reason Api.Widget -> IO ()
+handleWidget res =
     case res of
         Left reason ->
             handleError reason
 
-        Right metric ->
-            print metric
+        Right widget ->
+            print widget
 
 
 
@@ -202,7 +202,7 @@ data Reason
 
 
 
-handleEitherMsg :: Either InputError Msg -> [Either Reason Metric]
+handleEitherMsg :: Either InputError Msg -> [Either Reason Api.Widget]
 handleEitherMsg eitherMsg = do
     case eitherMsg of
         Left err ->
@@ -217,7 +217,7 @@ handleError reason =
     print ("reason", reason)
 
 
-handleMsg :: Msg -> [Either Reason Metric]
+handleMsg :: Msg -> [Either Reason Api.Widget]
 handleMsg msg =
     case msg of
         --InterfaceDevMsg Poller.Msg{..} ->
@@ -265,17 +265,17 @@ handleMsg msg =
 
 
 
-getMemInfoMetric :: MemInfo.MemInfo -> [MemInfo.MemInfo] -> MemInfoPoller.Metric -> Either Reason Metric
+getMemInfoMetric :: MemInfo.MemInfo -> [MemInfo.MemInfo] -> MemInfoPoller.Metric -> Either Reason Api.Widget
 getMemInfoMetric current previous metric =
     case metric of
-        MemInfoPoller.GetMemUsage config ->
-            Metric.memUsage (MemInfo.usedPercent current) (map MemInfo.usedPercent previous)
+        MemInfoPoller.GetMemUsage MemInfoPoller.MemUsage{..} ->
+            toWidget (MemInfo.usedPercent current) (map MemInfo.usedPercent previous)
                 & pure
 
 
-getDiskSpaceMetric :: DiskSpace.DiskUsage -> [DiskSpace.DiskUsage] -> DiskSpacePoller.Metric -> Either Reason Metric
+getDiskSpaceMetric :: DiskSpace.DiskUsage -> [DiskSpace.DiskUsage] -> DiskSpacePoller.Metric -> Either Reason Api.Widget
 getDiskSpaceMetric current previous metric =
     case metric of
-        DiskSpacePoller.GetDiskUsage config ->
-            Metric.diskUsage (DiskSpace.usedPercent current) (map DiskSpace.usedPercent previous)
+        DiskSpacePoller.GetDiskUsage DiskSpacePoller.DiskUsage{..} ->
+            toWidget (DiskSpace.usedPercent current) (map DiskSpace.usedPercent previous)
                 & pure

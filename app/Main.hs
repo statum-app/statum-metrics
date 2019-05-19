@@ -111,7 +111,7 @@ data InputError
 data Msg
     = InterfaceDevMsg (Poller.Msg [Dev.InterfaceSnapshot])
     | StatMsg (Poller.Msg Stat.StatSnapshot)
-    | MemInfoMsg (Poller.Msg MemInfo.MemInfo)
+    | MemInfoMsg [MemInfoPoller.Metric] (Poller.Msg MemInfo.MemInfo)
     | DiskSpaceMsg [DiskSpacePoller.Metric] (Poller.Msg DiskSpace.DiskUsage)
 
 
@@ -145,7 +145,7 @@ memInfoPollerConfig MemInfoPoller.Config{..} chan =
     Poller.Config
         { action = Reader.reader filepath
             & fmap parseMemInfo
-        , toMsg = MemInfoMsg
+        , toMsg = MemInfoMsg metrics
         , chan = chan
         , historyLength = historyLength
         }
@@ -226,8 +226,8 @@ handleMsg msg =
         --StatMsg Poller.Msg{..} ->
         --    handleStatMsg current previous
 
-        MemInfoMsg Poller.Msg{..} ->
-            [handleMemInfoMsg current previous]
+        MemInfoMsg metrics Poller.Msg{..} ->
+            map (getMemInfoMetric current previous) metrics
 
         DiskSpaceMsg metrics Poller.Msg{..} ->
             map (getDiskSpaceMetric current previous) metrics
@@ -262,12 +262,15 @@ handleMsg msg =
 --    Metric.cpuUtilization utilisation []
 --        & pure
 --        & pure
---
---
-handleMemInfoMsg :: MemInfo.MemInfo -> [MemInfo.MemInfo] -> Either Reason Metric
-handleMemInfoMsg current previous =
-    Metric.memUsage (MemInfo.usedPercent current) (map MemInfo.usedPercent previous)
-        & pure
+
+
+
+getMemInfoMetric :: MemInfo.MemInfo -> [MemInfo.MemInfo] -> MemInfoPoller.Metric -> Either Reason Metric
+getMemInfoMetric current previous metric =
+    case metric of
+        MemInfoPoller.GetMemUsage config ->
+            Metric.memUsage (MemInfo.usedPercent current) (map MemInfo.usedPercent previous)
+                & pure
 
 
 getDiskSpaceMetric :: DiskSpace.DiskUsage -> [DiskSpace.DiskUsage] -> DiskSpacePoller.Metric -> Either Reason Metric

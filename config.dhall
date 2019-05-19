@@ -27,6 +27,12 @@ let DiskSpaceMetric =
         }
     >
 
+let MemInfoMetric =
+    < GetMemUsage :
+        { toWidget : ∀(current : Double) → ∀(previous : List Double) → Widget
+        }
+    >
+
 let Task =
     < DiskSpacePoller :
         { filepath : Text
@@ -38,6 +44,7 @@ let Task =
         { filepath : Text
         , interval : Natural
         , historyLength : Natural
+        , metrics : List MemInfoMetric
         }
     >
 in
@@ -64,6 +71,19 @@ in
         { filepath = "meminfo.txt"
         , interval = 5
         , historyLength = 1
+        , metrics =
+            [ MemInfoMetric.GetMemUsage
+                { toWidget =
+                    λ(current : Double) → λ(previous : List Double) →
+                        Widget.MeterWidget
+                            { widgetId = "memUsage"
+                            , meter =
+                                { title = "Used memory"
+                                , value = current
+                                }
+                            }
+                }
+            ]
         }
     ]
 }

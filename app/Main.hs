@@ -289,11 +289,9 @@ getStatMetric :: Stat.StatSnapshot -> [Stat.StatSnapshot] -> StatPoller.Metric -
 getStatMetric current previous metric =
     case metric of
         StatPoller.GetCpuUtilization StatPoller.CpuUtilization{..} -> do
-            prev <- Safe.headMay previous
-                & Combinators.maybeToRight MissingPreviousStat
             (currentUtilization, prevUtilization) <- calcDelta Stat.cpuUtilisation current previous
                 & Maybe.catMaybes
-                & unconsEither MissingPreviousInterface
+                & unconsEither MissingPreviousStat
             toWidget currentUtilization prevUtilization
                 & pure
 

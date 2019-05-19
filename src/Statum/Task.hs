@@ -21,12 +21,10 @@ import qualified Statum.Task.StatPoller as StatPoller
 data Task
     = MemInfoPoller MemInfoPoller.Config
     | DiskSpacePoller DiskSpacePoller.Config
+    | InterfacePoller InterfacePoller.Config
     deriving (GHC.Generic)
 
-    -- = InterfacePoller InterfacePoller.Config
     -- | StatPoller StatPoller.Config
-    -- | MemInfoPoller MemInfoPoller.Config
-    -- | DiskSpacePoller DiskSpacePoller.Config
 
 instance Dhall.Interpret Task where
     autoWith _ = taskInterpreter
@@ -43,6 +41,9 @@ taskInterpreter = Dhall.Type{..}
                 "DiskSpacePoller" ->
                     Dhall.extractAuto DiskSpacePoller expr
 
+                "InterfacePoller" ->
+                    Dhall.extractAuto InterfacePoller expr
+
                 _ ->
                     "Unsupported task type: " <> type_
                         & T.unpack
@@ -56,4 +57,5 @@ taskInterpreter = Dhall.Type{..}
                 Map.fromList
                     [ ("MemInfoPoller", Dhall.expectedAuto MemInfoPoller)
                     , ("DiskSpacePoller", Dhall.expectedAuto DiskSpacePoller)
+                    , ("InterfacePoller", Dhall.expectedAuto InterfacePoller)
                     ]

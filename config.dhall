@@ -33,6 +33,17 @@ let MemInfoMetric =
         }
     >
 
+let InterfaceMetric =
+    < GetTransmitRate :
+        { interfaceName : Text
+        , toWidget : ∀(current : Double) → ∀(previous : List Double) → Widget
+        }
+    | GetReceiveRate :
+        { interfaceName : Text
+        , toWidget : ∀(current : Double) → ∀(previous : List Double) → Widget
+        }
+    >
+
 let Task =
     < DiskSpacePoller :
         { filepath : Text
@@ -45,6 +56,12 @@ let Task =
         , interval : Natural
         , historyLength : Natural
         , metrics : List MemInfoMetric
+        }
+    | InterfacePoller :
+        { filepath : Text
+        , interval : Natural
+        , historyLength : Natural
+        , metrics : List InterfaceMetric
         }
     >
 in
@@ -83,6 +100,37 @@ in
                                 }
                             }
                 }
+            ]
+        }
+    , Task.InterfacePoller
+        { filepath = "dev.txt"
+        , interval = 5
+        , historyLength = 1
+        , metrics =
+            [ InterfaceMetric.GetTransmitRate
+                { interfaceName = "eno1"
+                , toWidget =
+                    λ(current : Double) → λ(previous : List Double) →
+                        Widget.MeterWidget
+                            { widgetId = "networkTransmit"
+                            , meter =
+                                { title = "Transmit rate"
+                                , value = current
+                                }
+                            }
+                }
+            , InterfaceMetric.GetReceiveRate
+                { interfaceName = "eno1"
+                , toWidget =
+                    λ(current : Double) → λ(previous : List Double) →
+                        Widget.MeterWidget
+                            { widgetId = "networkRecieve"
+                            , meter =
+                                { title = "Receive rate"
+                                , value = current
+                                }
+                            }
+				}
             ]
         }
     ]

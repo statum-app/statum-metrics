@@ -13,6 +13,7 @@ import qualified Control.Concurrent.STM.TChan as TChan
 import qualified Control.Monad as Monad
 import qualified Data.Bifunctor as Bifunctor
 import qualified Data.Either.Combinators as Combinators
+import qualified Data.Maybe as Maybe
 import qualified Data.Text as T
 import qualified Data.Text.IO as TextIO
 import qualified Data.Time.Clock as Clock
@@ -31,6 +32,7 @@ import qualified Statum.Proc.Stat as Stat
 import qualified Statum.Reader as Reader
 import qualified Statum.Task as Task
 import qualified Statum.Task.DiskSpacePoller as DiskSpacePoller
+import qualified Statum.Task.InterfacePoller as InterfacePoller
 import qualified Statum.Task.MemInfoPoller as MemInfoPoller
 
 
@@ -56,9 +58,6 @@ main = do
     broadcastChan <- TChan.newBroadcastTChan
         & STM.atomically
     mapM_ (startTask broadcastChan) tasks
-    --interfacePollerConfig "/proc/net/dev" broadcastChan
-    --    & Poller.poller
-    --    & Interval.startWithState (Interval.Second 5) []
     --statPollerConfig "/proc/stat" broadcastChan
     --    & Poller.poller
     --    & Interval.startWithState (Interval.Second 5) []
@@ -96,6 +95,11 @@ startTask chan task =
                 & Poller.poller
                 & Interval.startWithState (Interval.Second interval) []
 
+        Task.InterfacePoller config@InterfacePoller.Config{..} ->
+            interfacePollerConfig config chan
+                & Poller.poller
+                & Interval.startWithState (Interval.Second interval) []
+
 
 data InputError
     = ReadDevError Reader.Error
@@ -109,26 +113,15 @@ data InputError
 
 
 data Msg
-    = InterfaceDevMsg (Poller.Msg [Dev.InterfaceSnapshot])
-    | StatMsg (Poller.Msg Stat.StatSnapshot)
-    | MemInfoMsg [MemInfoPoller.Metric] (Poller.Msg MemInfo.MemInfo)
+    = MemInfoMsg [MemInfoPoller.Metric] (Poller.Msg MemInfo.MemInfo)
     | DiskSpaceMsg [DiskSpacePoller.Metric] (Poller.Msg DiskSpace.DiskUsage)
+    | InterfaceDevMsg [InterfacePoller.Metric](Poller.Msg [Dev.InterfaceSnapshot])
+    -- | StatMsg (Poller.Msg Stat.StatSnapshot)
 
 
 
 
 
---interfacePollerConfig :: FilePath -> TChan.TChan (Either InputError Msg) -> Poller.Config Msg InputError [Dev.InterfaceSnapshot]
---interfacePollerConfig filepath chan =
---    Poller.Config
---        { action = Reader.reader filepath
---            & fmap parseDev
---        , toMsg = InterfaceDevMsg
---        , chan = chan
---        , historyLength = 1
---        }
---
---
 --statPollerConfig :: FilePath -> TChan.TChan (Either InputError Msg) -> Poller.Config Msg InputError Stat.StatSnapshot
 --statPollerConfig filepath chan =
 --    Poller.Config
@@ -157,6 +150,17 @@ diskSpacePollerConfig DiskSpacePoller.Config{..} chan =
         { action = DiskSpace.getDiskUsage filepath
             & fmap (Bifunctor.first GetDiskUsageError)
         , toMsg = DiskSpaceMsg metrics
+        , chan = chan
+        , historyLength = historyLength
+        }
+
+
+interfacePollerConfig :: InterfacePoller.Config -> TChan.TChan (Either InputError Msg) -> Poller.Config Msg InputError [Dev.InterfaceSnapshot]
+interfacePollerConfig InterfacePoller.Config{..} chan =
+    Poller.Config
+        { action = Reader.reader filepath
+            & fmap parseDev
+        , toMsg = InterfaceDevMsg metrics
         , chan = chan
         , historyLength = historyLength
         }
@@ -220,38 +224,20 @@ handleError reason =
 handleMsg :: Msg -> [Either Reason Api.Widget]
 handleMsg msg =
     case msg of
-        --InterfaceDevMsg Poller.Msg{..} ->
-        --    handleDevMsg "eno1" current previous
-
-        --StatMsg Poller.Msg{..} ->
-        --    handleStatMsg current previous
-
         MemInfoMsg metrics Poller.Msg{..} ->
             map (getMemInfoMetric current previous) metrics
 
         DiskSpaceMsg metrics Poller.Msg{..} ->
             map (getDiskSpaceMetric current previous) metrics
 
+        InterfaceDevMsg metrics Poller.Msg{..} ->
+            map (getInterfaceMetric current previous) metrics
 
---handleDevMsg :: T.Text -> [Dev.InterfaceSnapshot] -> [[Dev.InterfaceSnapshot]] -> Either Reason Metric
---handleDevMsg ifaceName current previous = do
---    currentSnapshot <- Dev.findSnapshot current ifaceName
---        & Combinators.maybeToRight (InterfaceNotFound ifaceName)
---    prevSnapshots <- Safe.headMay previous
---        & Combinators.maybeToRight MissingPreviousInterface
---    prevSnapshot <- Dev.findSnapshot prevSnapshots ifaceName
---        & Combinators.maybeToRight (InterfaceNotFound ifaceName)
---    txRate <- Dev.txRate currentSnapshot prevSnapshot
---        & Combinators.maybeToRight (InvalidRate ifaceName)
---    rxRate <- Dev.rxRate currentSnapshot prevSnapshot
---        & Combinators.maybeToRight (InvalidRate ifaceName)
---    -- TODO: send previous values
---    pure
---        [ Metric.networkTxRate ifaceName txRate []
---        , Metric.networkRxRate ifaceName rxRate []
---        ]
---
---
+        --StatMsg Poller.Msg{..} ->
+        --    handleStatMsg current previous
+
+
+
 --handleStatMsg :: Stat.StatSnapshot -> [Stat.StatSnapshot] -> Either Reason Metric
 --handleStatMsg current previous = do
 --    prev <- Safe.headMay previous
@@ -279,3 +265,53 @@ getDiskSpaceMetric current previous metric =
         DiskSpacePoller.GetDiskUsage DiskSpacePoller.DiskUsage{..} ->
             toWidget (DiskSpace.usedPercent current) (map DiskSpace.usedPercent previous)
                 & pure
+
+
+-- TODO: refactor duplication
+getInterfaceMetric :: [Dev.InterfaceSnapshot] -> [[Dev.InterfaceSnapshot]] -> InterfacePoller.Metric -> Either Reason Api.Widget
+getInterfaceMetric current previous metric =
+    case metric of
+        InterfacePoller.GetTransmitRate InterfacePoller.NetworkRate{..} -> do
+            (currentSnapshot, prevSnapshots) <- interfaceSnapshots interfaceName current previous
+            (currentRate, previousRates) <- getRates Dev.txRate currentSnapshot prevSnapshots
+                & Maybe.catMaybes
+                & unconsEither MissingPreviousInterface
+            toWidget currentRate previousRates
+                & pure
+
+        InterfacePoller.GetReceiveRate InterfacePoller.NetworkRate{..} -> do
+            (currentSnapshot, prevSnapshots) <- interfaceSnapshots interfaceName current previous
+            (currentRate, previousRates) <- getRates Dev.rxRate currentSnapshot prevSnapshots
+                & Maybe.catMaybes
+                & unconsEither MissingPreviousInterface
+            toWidget currentRate previousRates
+                & pure
+
+
+getRates :: (Dev.InterfaceSnapshot -> Dev.InterfaceSnapshot -> Maybe Double) -> Dev.InterfaceSnapshot -> [Dev.InterfaceSnapshot] -> [Maybe Double]
+getRates toRate first rest =
+    let
+        calcRate (previous, acc) current =
+            (current, acc ++ [toRate previous current])
+    in
+    foldl calcRate (first, []) rest
+        & snd
+
+
+interfaceSnapshots :: T.Text -> [Dev.InterfaceSnapshot] -> [[Dev.InterfaceSnapshot]] -> Either Reason (Dev.InterfaceSnapshot, [Dev.InterfaceSnapshot])
+interfaceSnapshots interfaceName current previous = do
+    currentSnapshot <- Dev.findSnapshot interfaceName current
+        & Combinators.maybeToRight (InterfaceNotFound interfaceName)
+    let prevSnapshots = map (Dev.findSnapshot interfaceName) previous
+            & Maybe.catMaybes
+    pure (currentSnapshot, prevSnapshots)
+
+
+unconsEither :: e -> [a] -> Either e (a, [a])
+unconsEither toErr list =
+    case list of
+        first:rest ->
+            Right (first, rest)
+
+        [] ->
+            Left toErr

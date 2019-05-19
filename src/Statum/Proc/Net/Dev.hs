@@ -57,23 +57,23 @@ find ifaces ifaceName =
         & List.find (\iface -> name iface == ifaceName)
 
 
-findSnapshot :: [InterfaceSnapshot] -> T.Text -> Maybe InterfaceSnapshot
-findSnapshot snapshots ifaceName =
+findSnapshot :: T.Text -> [InterfaceSnapshot] -> Maybe InterfaceSnapshot
+findSnapshot ifaceName snapshots =
     snapshots
         & List.find (\snap -> name (interface snap) == ifaceName)
 
 
-rxRate :: InterfaceSnapshot -> InterfaceSnapshot -> Maybe Int
+rxRate :: InterfaceSnapshot -> InterfaceSnapshot -> Maybe Double
 rxRate snapshotA snapshotB =
     networkRate snapshotA snapshotB rxBytes
 
 
-txRate :: InterfaceSnapshot -> InterfaceSnapshot -> Maybe Int
+txRate :: InterfaceSnapshot -> InterfaceSnapshot -> Maybe Double
 txRate snapshotA snapshotB =
     networkRate snapshotA snapshotB txBytes
 
 
-networkRate :: InterfaceSnapshot -> InterfaceSnapshot -> (Interface -> Int) -> Maybe Int
+networkRate :: InterfaceSnapshot -> InterfaceSnapshot -> (Interface -> Int) -> Maybe Double
 networkRate snapshotA snapshotB transferedBytes =
     let
         bytesA =
@@ -99,8 +99,7 @@ networkRate snapshotA snapshotB transferedBytes =
                 & fromIntegral
 
         bytesPerSecond =
-           round (rateDelta / timeDelta)
-
+           rateDelta / timeDelta
     in
     if bytesA >= bytesB && timestampA >= timestampB then
         Just bytesPerSecond

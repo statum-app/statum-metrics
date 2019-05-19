@@ -22,9 +22,9 @@ data Task
     = MemInfoPoller MemInfoPoller.Config
     | DiskSpacePoller DiskSpacePoller.Config
     | InterfacePoller InterfacePoller.Config
+    | StatPoller StatPoller.Config
     deriving (GHC.Generic)
 
-    -- | StatPoller StatPoller.Config
 
 instance Dhall.Interpret Task where
     autoWith _ = taskInterpreter
@@ -44,6 +44,9 @@ taskInterpreter = Dhall.Type{..}
                 "InterfacePoller" ->
                     Dhall.extractAuto InterfacePoller expr
 
+                "StatPoller" ->
+                    Dhall.extractAuto StatPoller expr
+
                 _ ->
                     "Unsupported task type: " <> type_
                         & T.unpack
@@ -58,4 +61,5 @@ taskInterpreter = Dhall.Type{..}
                     [ ("MemInfoPoller", Dhall.expectedAuto MemInfoPoller)
                     , ("DiskSpacePoller", Dhall.expectedAuto DiskSpacePoller)
                     , ("InterfacePoller", Dhall.expectedAuto InterfacePoller)
+                    , ("StatPoller", Dhall.expectedAuto StatPoller)
                     ]

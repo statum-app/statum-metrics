@@ -34,6 +34,7 @@ import qualified Statum.Task as Task
 import qualified Statum.Task.DiskSpacePoller as DiskSpacePoller
 import qualified Statum.Task.InterfacePoller as InterfacePoller
 import qualified Statum.Task.MemInfoPoller as MemInfoPoller
+import qualified Statum.Task.StatPoller as StatPoller
 
 
 
@@ -58,9 +59,6 @@ main = do
     broadcastChan <- TChan.newBroadcastTChan
         & STM.atomically
     mapM_ (startTask broadcastChan) tasks
-    --statPollerConfig "/proc/stat" broadcastChan
-    --    & Poller.poller
-    --    & Interval.startWithState (Interval.Second 5) []
     chan <- TChan.dupTChan broadcastChan
         & STM.atomically
     Monad.forever $ do
@@ -100,6 +98,11 @@ startTask chan task =
                 & Poller.poller
                 & Interval.startWithState (Interval.Second interval) []
 
+        Task.StatPoller config@StatPoller.Config{..} ->
+            statPollerConfig config chan
+                & Poller.poller
+                & Interval.startWithState (Interval.Second interval) []
+
 
 data InputError
     = ReadDevError Reader.Error
@@ -116,21 +119,9 @@ data Msg
     = MemInfoMsg [MemInfoPoller.Metric] (Poller.Msg MemInfo.MemInfo)
     | DiskSpaceMsg [DiskSpacePoller.Metric] (Poller.Msg DiskSpace.DiskUsage)
     | InterfaceDevMsg [InterfacePoller.Metric](Poller.Msg [Dev.InterfaceSnapshot])
-    -- | StatMsg (Poller.Msg Stat.StatSnapshot)
+    | StatMsg [StatPoller.Metric] (Poller.Msg Stat.StatSnapshot)
 
 
-
-
-
---statPollerConfig :: FilePath -> TChan.TChan (Either InputError Msg) -> Poller.Config Msg InputError Stat.StatSnapshot
---statPollerConfig filepath chan =
---    Poller.Config
---        { action = Reader.reader filepath
---            & fmap parseStat
---        , toMsg = StatMsg
---        , chan = chan
---        , historyLength = 1
---        }
 
 
 memInfoPollerConfig :: MemInfoPoller.Config -> TChan.TChan (Either InputError Msg) -> Poller.Config Msg InputError MemInfo.MemInfo
@@ -165,6 +156,16 @@ interfacePollerConfig InterfacePoller.Config{..} chan =
         , historyLength = historyLength
         }
 
+
+statPollerConfig :: StatPoller.Config -> TChan.TChan (Either InputError Msg) -> Poller.Config Msg InputError Stat.StatSnapshot
+statPollerConfig StatPoller.Config{..} chan =
+    Poller.Config
+        { action = Reader.reader filepath
+            & fmap parseStat
+        , toMsg = StatMsg metrics
+        , chan = chan
+        , historyLength = 1
+        }
 
 
 parseDev :: Either Reader.Error Reader.Result -> Either InputError [Dev.InterfaceSnapshot]
@@ -233,21 +234,8 @@ handleMsg msg =
         InterfaceDevMsg metrics Poller.Msg{..} ->
             map (getInterfaceMetric current previous) metrics
 
-        --StatMsg Poller.Msg{..} ->
-        --    handleStatMsg current previous
-
-
-
---handleStatMsg :: Stat.StatSnapshot -> [Stat.StatSnapshot] -> Either Reason Metric
---handleStatMsg current previous = do
---    prev <- Safe.headMay previous
---        & Combinators.maybeToRight MissingPreviousStat
---    utilisation <- Stat.cpuUtilisation current prev
---        & Combinators.maybeToRight (InvalidCpuUtilisation)
---    -- TODO: send previous values
---    Metric.cpuUtilization utilisation []
---        & pure
---        & pure
+        StatMsg metrics Poller.Msg{..} ->
+            map (getStatMetric current previous) metrics
 
 
 
@@ -273,7 +261,7 @@ getInterfaceMetric current previous metric =
     case metric of
         InterfacePoller.GetTransmitRate InterfacePoller.NetworkRate{..} -> do
             (currentSnapshot, prevSnapshots) <- interfaceSnapshots interfaceName current previous
-            (currentRate, previousRates) <- getRates Dev.txRate currentSnapshot prevSnapshots
+            (currentRate, previousRates) <- calcDelta Dev.txRate currentSnapshot prevSnapshots
                 & Maybe.catMaybes
                 & unconsEither MissingPreviousInterface
             toWidget currentRate previousRates
@@ -281,21 +269,11 @@ getInterfaceMetric current previous metric =
 
         InterfacePoller.GetReceiveRate InterfacePoller.NetworkRate{..} -> do
             (currentSnapshot, prevSnapshots) <- interfaceSnapshots interfaceName current previous
-            (currentRate, previousRates) <- getRates Dev.rxRate currentSnapshot prevSnapshots
+            (currentRate, previousRates) <- calcDelta Dev.rxRate currentSnapshot prevSnapshots
                 & Maybe.catMaybes
                 & unconsEither MissingPreviousInterface
             toWidget currentRate previousRates
                 & pure
-
-
-getRates :: (Dev.InterfaceSnapshot -> Dev.InterfaceSnapshot -> Maybe Double) -> Dev.InterfaceSnapshot -> [Dev.InterfaceSnapshot] -> [Maybe Double]
-getRates toRate first rest =
-    let
-        calcRate (previous, acc) current =
-            (current, acc ++ [toRate previous current])
-    in
-    foldl calcRate (first, []) rest
-        & snd
 
 
 interfaceSnapshots :: T.Text -> [Dev.InterfaceSnapshot] -> [[Dev.InterfaceSnapshot]] -> Either Reason (Dev.InterfaceSnapshot, [Dev.InterfaceSnapshot])
@@ -305,6 +283,30 @@ interfaceSnapshots interfaceName current previous = do
     let prevSnapshots = map (Dev.findSnapshot interfaceName) previous
             & Maybe.catMaybes
     pure (currentSnapshot, prevSnapshots)
+
+
+getStatMetric :: Stat.StatSnapshot -> [Stat.StatSnapshot] -> StatPoller.Metric -> Either Reason Api.Widget
+getStatMetric current previous metric =
+    case metric of
+        StatPoller.GetCpuUtilization StatPoller.CpuUtilization{..} -> do
+            prev <- Safe.headMay previous
+                & Combinators.maybeToRight MissingPreviousStat
+            (currentUtilization, prevUtilization) <- calcDelta Stat.cpuUtilisation current previous
+                & Maybe.catMaybes
+                & unconsEither MissingPreviousInterface
+            toWidget currentUtilization prevUtilization
+                & pure
+
+
+
+calcDelta :: (a -> a -> Maybe b) -> a -> [a] -> [Maybe b]
+calcDelta toRate first rest =
+    let
+        calc (previous, acc) current =
+            (current, acc ++ [toRate previous current])
+    in
+    foldl calc (first, []) rest
+        & snd
 
 
 unconsEither :: e -> [a] -> Either e (a, [a])

@@ -44,6 +44,12 @@ let InterfaceMetric =
         }
     >
 
+let StatMetric =
+    < GetCpuUtilization :
+        { toWidget : ∀(current : Double) → ∀(previous : List Double) → Widget
+        }
+    >
+
 let Task =
     < DiskSpacePoller :
         { filepath : Text
@@ -62,6 +68,12 @@ let Task =
         , interval : Natural
         , historyLength : Natural
         , metrics : List InterfaceMetric
+        }
+    | StatPoller :
+        { filepath : Text
+        , interval : Natural
+        , historyLength : Natural
+        , metrics : List StatMetric
         }
     >
 in
@@ -131,6 +143,24 @@ in
                                 }
                             }
 				}
+            ]
+        }
+    , Task.StatPoller
+        { filepath = "stat.txt"
+        , interval = 5
+        , historyLength = 1
+        , metrics =
+            [ StatMetric.GetCpuUtilization
+                { toWidget =
+                    λ(current : Double) → λ(previous : List Double) →
+                        Widget.MeterWidget
+                            { widgetId = "cpuUtilization"
+                            , meter =
+                                { title = "Cpu load"
+                                , value = current
+                                }
+                            }
+                }
             ]
         }
     ]

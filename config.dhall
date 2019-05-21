@@ -76,27 +76,59 @@ let Task =
         , metrics : List StatMetric
         }
     >
-in
-{ apiBaseUrl = "http://192.168.10.144:8080"
-, tasks =
-    [ Task.DiskSpacePoller
+
+
+--let WidgetConfig =
+--    < MeterWidgetConfig :
+--      { title : Text
+--      }
+--    | NumberWidgetConfig :
+--      { title : Text
+--      , moreInfo : Text
+--      }
+--    >
+
+
+let DiskSpacePollerConfig =
+    { filepath : Text, interval : Natural, historyLength : Natural, widgetId : Text, widget : { title : Text} }
+
+let diskSpaceConfig : DiskSpacePollerConfig -> Task =
+    λ(config : DiskSpacePollerConfig) ->
+      Task.DiskSpacePoller
+          { filepath = config.filepath
+          , interval = config.interval
+          , historyLength = config.historyLength
+          , metrics =
+              [ DiskSpaceMetric.GetDiskUsage
+                  { toWidget =
+                      λ(current : Double) → λ(previous : List Double) →
+                          Widget.MeterWidget
+                              { widgetId = config.widgetId
+                              , meter =
+                                  { title = config.widget.title
+                                  , value = current
+                                  }
+                              }
+                  }
+              ]
+          }
+
+
+let defaultDiskSpaceConfig : { widgetId : Text } -> DiskSpacePollerConfig =
+    λ(config : { widgetId : Text }) ->
         { filepath = "."
         , interval = 5
         , historyLength = 1
-        , metrics =
-            [ DiskSpaceMetric.GetDiskUsage
-                { toWidget =
-                    λ(current : Double) → λ(previous : List Double) →
-                        Widget.MeterWidget
-                            { widgetId = "b"
-                            , meter =
-                                { title = "Free space"
-                                , value = current
-                                }
-                            }
-                }
-            ]
+        , widgetId = config.widgetId
+        , widget = { title = "Used space"}
         }
+in
+{ apiBaseUrl = "http://192.168.10.144:8080"
+, tasks =
+    [ diskSpaceConfig (
+        defaultDiskSpaceConfig { widgetId = "b" } //
+            { filepath = "."}
+      )
     , Task.MemInfoPoller
         { filepath = "meminfo.txt"
         , interval = 5

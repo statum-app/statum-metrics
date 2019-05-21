@@ -77,7 +77,8 @@ let Task =
         }
     >
 in
-{ tasks =
+{ apiBaseUrl = "http://192.168.10.144:8080"
+, tasks =
     [ Task.DiskSpacePoller
         { filepath = "."
         , interval = 5
@@ -87,7 +88,7 @@ in
                 { toWidget =
                     λ(current : Double) → λ(previous : List Double) →
                         Widget.MeterWidget
-                            { widgetId = "freeSpace"
+                            { widgetId = "b"
                             , meter =
                                 { title = "Free space"
                                 , value = current

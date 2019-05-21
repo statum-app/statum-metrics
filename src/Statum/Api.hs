@@ -63,6 +63,7 @@ buildRequest body baseUrl path =
     (Client.parseRequest_ $ baseUrl ++ path)
         { Client.method = "POST"
         , Client.requestBody = Client.RequestBodyLBS (Aeson.encode body)
+        , Client.requestHeaders = [("Content-type", "application/json")]
         }
         & Request
 

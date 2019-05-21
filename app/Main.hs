@@ -19,6 +19,7 @@ import qualified Data.Text.IO as TextIO
 import qualified Data.Time.Clock as Clock
 import qualified Dhall
 import qualified GHC.Generics as GHC
+import qualified Network.HTTP.Client as Client
 import qualified Network.HTTP.Client.TLS as TLSClient
 import qualified Safe
 import qualified Statum.Api as Api
@@ -40,6 +41,7 @@ import qualified Statum.Task.StatPoller as StatPoller
 
 data Config = Config
     { tasks :: [Task.Task]
+    , apiBaseUrl :: String
     }
     deriving (GHC.Generic)
 
@@ -54,7 +56,7 @@ getConfig =
 
 main :: IO ()
 main = do
-    Config{..} <- getConfig
+    config@Config{..} <- getConfig
     manager <- TLSClient.newTlsManager
     broadcastChan <- TChan.newBroadcastTChan
         & STM.atomically
@@ -66,17 +68,20 @@ main = do
         eitherMsg <- TChan.readTChan chan
             & STM.atomically
         handleEitherMsg eitherMsg
-            & mapM_ handleWidget
+            & mapM_ (handleWidget config manager)
 
 
-handleWidget :: Either Reason Api.Widget -> IO ()
-handleWidget res =
+handleWidget :: Config -> Client.Manager -> Either Reason Api.Widget -> IO ()
+handleWidget Config{..} manager res =
     case res of
         Left reason ->
             handleError reason
 
-        Right widget ->
+        Right widget -> do
             print widget
+            response <- Api.prepareRequest apiBaseUrl widget
+                & Api.sendRequest manager
+            print response
 
 
 

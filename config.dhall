@@ -89,7 +89,7 @@ let WidgetConfig =
     >
 
 
-let DiskSpacePollerConfig =
+let DiskSpaceTaskConfig =
     { filepath : Text
     , interval : Natural
     , historyLength : Natural
@@ -97,44 +97,53 @@ let DiskSpacePollerConfig =
     , widget : WidgetConfig
     }
 
-let diskSpaceTask : DiskSpacePollerConfig -> Task =
-    λ(config : DiskSpacePollerConfig) ->
-      Task.DiskSpacePoller
-          { filepath = config.filepath
-          , interval = config.interval
-          , historyLength = config.historyLength
-          , metrics =
-              [ DiskSpaceMetric.GetDiskUsage
-                  { toWidget =
-                      λ(current : Double) → λ(previous : List Double) →
-                          merge
-                              { MeterWidgetConfig =
-                                  λ(widgetConfig : { title : Text }) ->
-                                      Widget.MeterWidget
-                                          { widgetId = config.widgetId
-                                          , meter =
-                                              { title = widgetConfig.title
-                                              , value = current
-                                              }
-                                          }
-                              , NumberWidgetConfig =
-                                  λ(widgetConfig : { title : Text, moreInfo : Text}) ->
-                                      Widget.NumberWidget
-                                          { widgetId = config.widgetId
-                                          , number =
-                                              { title = widgetConfig.title
-                                              , current = current
-                                              , previous = List/head Double previous
-                                              , moreInfo = widgetConfig.moreInfo
-                                              }
-                                          }
-                              }
-                              config.widget
-                  }
-              ]
-          }
+let MemInfoTaskConfig =
+    { filepath : Text
+    , interval : Natural
+    , historyLength : Natural
+    , widgetId : Text
+    , widget : WidgetConfig
+    }
 
-let defaultDiskSpaceConfig : { widgetId : Text } -> DiskSpacePollerConfig =
+
+let diskSpaceTask : DiskSpaceTaskConfig -> Task =
+    λ(config : DiskSpaceTaskConfig) ->
+        Task.DiskSpacePoller
+            { filepath = config.filepath
+            , interval = config.interval
+            , historyLength = config.historyLength
+            , metrics =
+                [ DiskSpaceMetric.GetDiskUsage
+                    { toWidget =
+                        λ(current : Double) → λ(previous : List Double) →
+                            merge
+                                { MeterWidgetConfig =
+                                    λ(widgetConfig : { title : Text }) ->
+                                        Widget.MeterWidget
+                                            { widgetId = config.widgetId
+                                            , meter =
+                                                { title = widgetConfig.title
+                                                , value = current
+                                                }
+                                            }
+                                , NumberWidgetConfig =
+                                    λ(widgetConfig : { title : Text, moreInfo : Text}) ->
+                                        Widget.NumberWidget
+                                            { widgetId = config.widgetId
+                                            , number =
+                                                { title = widgetConfig.title
+                                                , current = current
+                                                , previous = List/head Double previous
+                                                , moreInfo = widgetConfig.moreInfo
+                                                }
+                                            }
+                                }
+                                config.widget
+                    }
+                ]
+            }
+
+let defaultDiskSpaceConfig : { widgetId : Text } -> DiskSpaceTaskConfig =
     λ(config : { widgetId : Text }) ->
         { filepath = "."
         , interval = 5
@@ -144,6 +153,54 @@ let defaultDiskSpaceConfig : { widgetId : Text } -> DiskSpacePollerConfig =
             { title = "Used space"
             }
         }
+
+let memInfoTask : MemInfoTaskConfig -> Task =
+    λ(config : MemInfoTaskConfig) ->
+        Task.DiskSpacePoller
+            { filepath = config.filepath
+            , interval = config.interval
+            , historyLength = config.historyLength
+            , metrics =
+                [ DiskSpaceMetric.GetDiskUsage
+                    { toWidget =
+                        λ(current : Double) → λ(previous : List Double) →
+                            merge
+                                { MeterWidgetConfig =
+                                    λ(widgetConfig : { title : Text }) ->
+                                        Widget.MeterWidget
+                                            { widgetId = config.widgetId
+                                            , meter =
+                                                { title = widgetConfig.title
+                                                , value = current
+                                                }
+                                            }
+                                , NumberWidgetConfig =
+                                    λ(widgetConfig : { title : Text, moreInfo : Text}) ->
+                                        Widget.NumberWidget
+                                            { widgetId = config.widgetId
+                                            , number =
+                                                { title = widgetConfig.title
+                                                , current = current
+                                                , previous = List/head Double previous
+                                                , moreInfo = widgetConfig.moreInfo
+                                                }
+                                            }
+                                }
+                                config.widget
+                    }
+                ]
+            }
+
+let defaultMemInfoConfig : { widgetId : Text } -> MemInfoTaskConfig =
+    λ(config : { widgetId : Text }) ->
+        { filepath = "/proc/meminfo"
+        , interval = 5
+        , historyLength = 1
+        , widgetId = config.widgetId
+        , widget = WidgetConfig.MeterWidgetConfig
+            { title = "Used memory"
+            }
+        }
 in
 { apiBaseUrl = "http://192.168.10.144:8080"
 , tasks =
@@ -151,24 +208,10 @@ in
         defaultDiskSpaceConfig { widgetId = "b" } //
             { filepath = "."}
       )
-    , Task.MemInfoPoller
-        { filepath = "meminfo.txt"
-        , interval = 5
-        , historyLength = 1
-        , metrics =
-            [ MemInfoMetric.GetMemUsage
-                { toWidget =
-                    λ(current : Double) → λ(previous : List Double) →
-                        Widget.MeterWidget
-                            { widgetId = "memUsage"
-                            , meter =
-                                { title = "Used memory"
-                                , value = current
-                                }
-                            }
-                }
-            ]
-        }
+    , memInfoTask (
+        defaultMemInfoConfig { widgetId = "memUsage"}
+          // { filepath = "meminfo.txt" }
+      )
     , Task.InterfacePoller
         { filepath = "dev.txt"
         , interval = 5

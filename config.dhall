@@ -90,9 +90,15 @@ let Task =
 
 
 let DiskSpacePollerConfig =
-    { filepath : Text, interval : Natural, historyLength : Natural, widgetId : Text, widget : { title : Text} }
+    { filepath : Text
+    , interval : Natural
+    , historyLength : Natural
+    , widgetId : Text
+    , widget : { title : Text}
+    }
 
-let diskSpaceConfig : DiskSpacePollerConfig -> Task =
+
+let diskSpaceTask : DiskSpacePollerConfig -> Task =
     λ(config : DiskSpacePollerConfig) ->
       Task.DiskSpacePoller
           { filepath = config.filepath
@@ -125,7 +131,7 @@ let defaultDiskSpaceConfig : { widgetId : Text } -> DiskSpacePollerConfig =
 in
 { apiBaseUrl = "http://192.168.10.144:8080"
 , tasks =
-    [ diskSpaceConfig (
+    [ diskSpaceTask (
         defaultDiskSpaceConfig { widgetId = "b" } //
             { filepath = "."}
       )

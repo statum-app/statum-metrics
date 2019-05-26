@@ -21,7 +21,7 @@ import qualified GHC.Generics as GHC
 data Number = Number
     { title :: T.Text
     , current :: Double
-    , previous :: Double
+    , previous :: Maybe Double
     , moreInfo :: T.Text
     }
     deriving (Show, GHC.Generic)

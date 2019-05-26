@@ -6,7 +6,7 @@ let Meter =
 let Number =
     { title : Text
     , current : Double
-    , previous : Double
+    , previous : Optional Double
     , moreInfo : Text
     }
 
@@ -78,15 +78,15 @@ let Task =
     >
 
 
---let WidgetConfig =
---    < MeterWidgetConfig :
---      { title : Text
---      }
---    | NumberWidgetConfig :
---      { title : Text
---      , moreInfo : Text
---      }
---    >
+let WidgetConfig =
+    < MeterWidgetConfig :
+      { title : Text
+      }
+    | NumberWidgetConfig :
+      { title : Text
+      , moreInfo : Text
+      }
+    >
 
 
 let DiskSpacePollerConfig =
@@ -94,9 +94,8 @@ let DiskSpacePollerConfig =
     , interval : Natural
     , historyLength : Natural
     , widgetId : Text
-    , widget : { title : Text}
+    , widget : WidgetConfig
     }
-
 
 let diskSpaceTask : DiskSpacePollerConfig -> Task =
     λ(config : DiskSpacePollerConfig) ->
@@ -108,17 +107,32 @@ let diskSpaceTask : DiskSpacePollerConfig -> Task =
               [ DiskSpaceMetric.GetDiskUsage
                   { toWidget =
                       λ(current : Double) → λ(previous : List Double) →
-                          Widget.MeterWidget
-                              { widgetId = config.widgetId
-                              , meter =
-                                  { title = config.widget.title
-                                  , value = current
-                                  }
+                          merge
+                              { MeterWidgetConfig =
+                                  λ(widgetConfig : { title : Text }) ->
+                                      Widget.MeterWidget
+                                          { widgetId = config.widgetId
+                                          , meter =
+                                              { title = widgetConfig.title
+                                              , value = current
+                                              }
+                                          }
+                              , NumberWidgetConfig =
+                                  λ(widgetConfig : { title : Text, moreInfo : Text}) ->
+                                      Widget.NumberWidget
+                                          { widgetId = config.widgetId
+                                          , number =
+                                              { title = widgetConfig.title
+                                              , current = current
+                                              , previous = List/head Double previous
+                                              , moreInfo = widgetConfig.moreInfo
+                                              }
+                                          }
                               }
+                              config.widget
                   }
               ]
           }
-
 
 let defaultDiskSpaceConfig : { widgetId : Text } -> DiskSpacePollerConfig =
     λ(config : { widgetId : Text }) ->
@@ -126,7 +140,9 @@ let defaultDiskSpaceConfig : { widgetId : Text } -> DiskSpacePollerConfig =
         , interval = 5
         , historyLength = 1
         , widgetId = config.widgetId
-        , widget = { title = "Used space"}
+        , widget = WidgetConfig.MeterWidgetConfig
+            { title = "Used space"
+            }
         }
 in
 { apiBaseUrl = "http://192.168.10.144:8080"
